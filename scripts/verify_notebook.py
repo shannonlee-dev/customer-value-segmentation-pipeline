@@ -2,16 +2,38 @@
 
 import argparse
 import hashlib
-import re
 from pathlib import Path
 
 import nbformat
 
-
-DEFAULT_NOTEBOOK_PATH = Path("notebooks/analysis_report.ipynb")
-DEFAULT_LOG_PATH = Path("artifacts/notebook_execution.log")
-CUSTOMER_ID_PATTERN = re.compile(r"\b[0-9a-f]{64}\b")
-PRODUCT_ID_PATTERN = re.compile(r"\b0\d{9}\b")
+if __package__:
+    from .constants import (
+        CHART_MIME_TYPE,
+        CODE_CELL_TYPE,
+        CUSTOMER_ID_PATTERN,
+        DEFAULT_LOG_PATH,
+        DEFAULT_NOTEBOOK_PATH,
+        EVIDENCE_SUMMARY_KEYS,
+        MINIMUM_CHART_COUNT,
+        PASS_STATUS,
+        PRODUCT_ID_PATTERN,
+        RENDERED_OUTPUT_TYPES,
+        TEXT_MIME_PREFIX,
+    )
+else:
+    from constants import (
+        CHART_MIME_TYPE,
+        CODE_CELL_TYPE,
+        CUSTOMER_ID_PATTERN,
+        DEFAULT_LOG_PATH,
+        DEFAULT_NOTEBOOK_PATH,
+        EVIDENCE_SUMMARY_KEYS,
+        MINIMUM_CHART_COUNT,
+        PASS_STATUS,
+        PRODUCT_ID_PATTERN,
+        RENDERED_OUTPUT_TYPES,
+        TEXT_MIME_PREFIX,
+    )
 
 
 def _textual_outputs(notebook):
@@ -23,12 +45,12 @@ def _textual_outputs(notebook):
             output_type = output.get("output_type")
             if output_type == "stream":
                 values.append(output.get("text", ""))
-            elif output_type in ("display_data", "execute_result"):
+            elif output_type in RENDERED_OUTPUT_TYPES:
                 data = output.get("data", {})
                 values.extend(
                     value
                     for mime_type, value in data.items()
-                    if mime_type.startswith("text/")
+                    if mime_type.startswith(TEXT_MIME_PREFIX)
                 )
             elif output_type == "error":
                 values.extend(output.get("traceback", []))
@@ -42,7 +64,7 @@ def inspect_notebook(path):
         raise FileNotFoundError("Notebook does not exist: {}".format(path))
 
     notebook = nbformat.read(path, as_version=4)
-    code_cells = [cell for cell in notebook.cells if cell.cell_type == "code"]
+    code_cells = [cell for cell in notebook.cells if cell.cell_type == CODE_CELL_TYPE]
     unexecuted = [
         index
         for index, cell in enumerate(code_cells, start=1)
@@ -57,11 +79,11 @@ def inspect_notebook(path):
         raise ValueError("Notebook contains {} error output(s)".format(error_count))
 
     chart_count = sum(
-        "image/png" in output.get("data", {})
+        CHART_MIME_TYPE in output.get("data", {})
         for output in outputs
-        if output.get("output_type") in ("display_data", "execute_result")
+        if output.get("output_type") in RENDERED_OUTPUT_TYPES
     )
-    if chart_count < 6:
+    if chart_count < MINIMUM_CHART_COUNT:
         raise ValueError("Notebook must contain at least six image/png chart outputs")
 
     rendered_text = _textual_outputs(notebook)
@@ -75,8 +97,8 @@ def inspect_notebook(path):
         "chart_count": chart_count,
         "error_count": error_count,
         "unexecuted_cell_count": len(unexecuted),
-        "redaction_status": "PASS",
-        "status": "PASS",
+        "redaction_status": PASS_STATUS,
+        "status": PASS_STATUS,
     }
 
 
@@ -84,18 +106,8 @@ def format_evidence(path, summary):
     """Format a deterministic SHA-backed verification record."""
     path = Path(path)
     digest = hashlib.sha256(path.read_bytes()).hexdigest()
-    keys = (
-        "cell_count",
-        "code_cell_count",
-        "output_count",
-        "chart_count",
-        "error_count",
-        "unexecuted_cell_count",
-        "redaction_status",
-        "status",
-    )
     lines = ["notebook: {}".format(path.as_posix()), "notebook_sha256: {}".format(digest)]
-    lines.extend("{}: {}".format(key, summary[key]) for key in keys)
+    lines.extend("{}: {}".format(key, summary[key]) for key in EVIDENCE_SUMMARY_KEYS)
     return "\n".join(lines) + "\n"
 
 

@@ -5,8 +5,10 @@ from pathlib import Path
 import nbformat
 from nbformat.v4 import new_code_cell, new_markdown_cell, new_notebook
 
-
-NOTEBOOK_PATH = Path("notebooks/analysis_report.ipynb")
+if __package__:
+    from .constants import NOTEBOOK_PATH
+else:
+    from constants import NOTEBOOK_PATH
 
 
 def build_notebook(path=NOTEBOOK_PATH):

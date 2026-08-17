@@ -15,6 +15,46 @@ from scripts.prepare_hm_data import prepare_cohort, stable_customer_ids
 
 
 class DataPreparationTest(unittest.TestCase):
+    def _write_hm_shaped_source(self):
+        pd.DataFrame(
+            [
+                ["2020-01-03", "customer-1", "0100000001", 0.10, 1],
+                ["2020-01-01", "customer-2", "0100000002", 0.20, 2],
+                ["2020-01-02", "customer-3", "0100000003", 0.30, 1],
+                ["2020-01-04", "customer-4", "0100000004", 0.40, 2],
+                ["2020-01-05", "customer-1", "0100000001", 0.10, 1],
+            ],
+            columns=["t_dat", "customer_id", "article_id", "price", "sales_channel_id"],
+        ).to_csv(self.raw_dir / "transactions_train.csv", index=False)
+        pd.DataFrame(
+            [
+                ["0100000001", "Top one", "Garment upper body"],
+                ["0100000002", "Top two", "Garment upper body"],
+                ["0100000003", "Top three", "Garment upper body"],
+                ["0100000004", "Missing image", "Garment upper body"],
+            ],
+            columns=["article_id", "prod_name", "product_group_name"],
+        ).to_csv(self.raw_dir / "articles.csv", index=False)
+        pd.DataFrame(
+            [
+                ["customer-1", 20, "ACTIVE", "Regularly"],
+                ["customer-2", None, "PRE-CREATE", "None"],
+                ["customer-3", 40, "ACTIVE", "Monthly"],
+                ["customer-4", 30, "ACTIVE", "Regularly"],
+            ],
+            columns=[
+                "customer_id",
+                "age",
+                "club_member_status",
+                "fashion_news_frequency",
+            ],
+        ).to_csv(self.raw_dir / "customers.csv", index=False)
+        image = np.zeros((2, 2, 3), dtype=np.uint8)
+        for article_id in ("0100000001", "0100000002", "0100000003"):
+            matplotlib.image.imsave(
+                self.raw_dir / "images" / "010" / f"{article_id}.jpg", image
+            )
+
     def test_stable_customer_ids_is_order_independent(self):
         ids = ["customer-c", "customer-a", "customer-d", "customer-b"]
 
@@ -99,43 +139,3 @@ class DataPreparationTest(unittest.TestCase):
 
             self.assertEqual(completed.returncode, 0, completed.stderr)
             self.assertTrue(self.output_path.exists())
-
-    def _write_hm_shaped_source(self):
-        pd.DataFrame(
-            [
-                ["2020-01-03", "customer-1", "0100000001", 0.10, 1],
-                ["2020-01-01", "customer-2", "0100000002", 0.20, 2],
-                ["2020-01-02", "customer-3", "0100000003", 0.30, 1],
-                ["2020-01-04", "customer-4", "0100000004", 0.40, 2],
-                ["2020-01-05", "customer-1", "0100000001", 0.10, 1],
-            ],
-            columns=["t_dat", "customer_id", "article_id", "price", "sales_channel_id"],
-        ).to_csv(self.raw_dir / "transactions_train.csv", index=False)
-        pd.DataFrame(
-            [
-                ["0100000001", "Top one", "Garment upper body"],
-                ["0100000002", "Top two", "Garment upper body"],
-                ["0100000003", "Top three", "Garment upper body"],
-                ["0100000004", "Missing image", "Garment upper body"],
-            ],
-            columns=["article_id", "prod_name", "product_group_name"],
-        ).to_csv(self.raw_dir / "articles.csv", index=False)
-        pd.DataFrame(
-            [
-                ["customer-1", 20, "ACTIVE", "Regularly"],
-                ["customer-2", None, "PRE-CREATE", "None"],
-                ["customer-3", 40, "ACTIVE", "Monthly"],
-                ["customer-4", 30, "ACTIVE", "Regularly"],
-            ],
-            columns=[
-                "customer_id",
-                "age",
-                "club_member_status",
-                "fashion_news_frequency",
-            ],
-        ).to_csv(self.raw_dir / "customers.csv", index=False)
-        image = np.zeros((2, 2, 3), dtype=np.uint8)
-        for article_id in ("0100000001", "0100000002", "0100000003"):
-            matplotlib.image.imsave(
-                self.raw_dir / "images" / "010" / f"{article_id}.jpg", image
-            )
