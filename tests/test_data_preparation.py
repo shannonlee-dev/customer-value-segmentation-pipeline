@@ -112,6 +112,26 @@ class DataPreparationTest(unittest.TestCase):
         self.assertEqual(result["product_id"].tolist(), ["0100000002", "0100000003", "0100000001", "0100000001"])
         self.assertTrue(summary_path_exists)
 
+    def test_prepare_cohort_returns_the_written_output_summary(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            self.raw_dir = Path(temporary_directory)
+            self.output_path = self.raw_dir / "cohort.csv"
+            (self.raw_dir / "images" / "010").mkdir(parents=True)
+            self._write_hm_shaped_source()
+
+            summary = prepare_cohort(
+                self.raw_dir,
+                self.output_path,
+                cohort_size=4,
+                seed=7,
+                chunksize=3,
+                minimum_rows=4,
+            )
+
+            self.assertEqual(summary["output_rows"], len(pd.read_csv(self.output_path)))
+            self.assertEqual(summary["output_columns"], 11)
+            self.assertTrue(self.output_path.with_suffix(".summary.json").is_file())
+
     def test_command_line_writes_the_requested_output(self):
         with tempfile.TemporaryDirectory() as temporary_directory:
             self.raw_dir = Path(temporary_directory)

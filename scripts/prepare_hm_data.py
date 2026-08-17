@@ -97,23 +97,58 @@ def prepare_cohort(
     minimum_rows=DEFAULT_MINIMUM_ROWS,
 ):
     """Build and write a deterministic, metadata-joined H&M customer cohort."""
+    _validate_prepare_options(chunksize, minimum_rows)
+    raw_dir, transactions_path, articles_path, customers_path, _ = _resolve_source_paths(
+        raw_dir
+    )
+    articles, customers = _load_metadata_sources(articles_path, customers_path)
+    active_customer_ids = _load_active_customer_ids(transactions_path, chunksize)
+    selected_customer_ids = set(
+        stable_customer_ids(active_customer_ids, cohort_size, seed)
+    )
+    selected_chunks = _load_selected_transactions(
+        transactions_path, selected_customer_ids, chunksize
+    )
+    cohort = _enrich_transactions(selected_chunks, articles, customers)
+    cohort, missing_image_rows = _filter_available_images(cohort, raw_dir, minimum_rows)
+    return _write_cohort_and_summary(
+        cohort=cohort,
+        output_path=output_path,
+        active_customer_count=len(active_customer_ids),
+        selected_customer_count=len(selected_customer_ids),
+        selected_transaction_count=sum(len(chunk) for chunk in selected_chunks),
+        missing_image_rows=missing_image_rows,
+        seed=seed,
+        cohort_size=cohort_size,
+        minimum_rows=minimum_rows,
+    )
+
+
+def _validate_prepare_options(chunksize, minimum_rows):
     if chunksize <= 0:
         raise ValueError("chunksize must be positive")
     if minimum_rows <= 0:
         raise ValueError("minimum_rows must be positive")
 
+
+def _resolve_source_paths(raw_dir):
     raw_dir = Path(raw_dir)
-    output_path = Path(output_path)
     transactions_path = raw_dir / TRANSACTIONS_FILENAME
     articles_path = raw_dir / ARTICLES_FILENAME
     customers_path = raw_dir / CUSTOMERS_FILENAME
     images_dir = raw_dir / IMAGES_DIRECTORY
     for source_path in (transactions_path, articles_path, customers_path, images_dir):
         _require_existing_path(source_path)
+    return raw_dir, transactions_path, articles_path, customers_path, images_dir
 
+
+def _load_metadata_sources(articles_path, customers_path):
     articles = _read_metadata(articles_path, ARTICLE_COLUMNS, ARTICLE_ID_COLUMN)
     customers = _read_metadata(customers_path, CUSTOMER_COLUMNS, CUSTOMER_ID_COLUMN)
+    return articles, customers
 
+
+def _load_active_customer_ids(transactions_path, chunksize):
     active_ids = set()
     for chunk in pd.read_csv(
         transactions_path,
@@ -125,8 +160,10 @@ def prepare_cohort(
         active_ids.update(chunk[CUSTOMER_ID_COLUMN].dropna().unique())
     if not active_ids:
         raise ValueError("transactions_train.csv must not be empty")
+    return active_ids
 
-    selected = set(stable_customer_ids(active_ids, cohort_size, seed))
+
+def _load_selected_transactions(transactions_path, selected_customer_ids, chunksize):
     selected_chunks = []
     for chunk in pd.read_csv(
         transactions_path,
@@ -135,11 +172,16 @@ def prepare_cohort(
         chunksize=chunksize,
     ):
         _require_columns(chunk, TRANSACTION_COLUMNS, transactions_path.name)
-        selected_chunks.append(chunk.loc[chunk[CUSTOMER_ID_COLUMN].isin(selected)].copy())
+        selected_chunks.append(
+            chunk.loc[chunk[CUSTOMER_ID_COLUMN].isin(selected_customer_ids)].copy()
+        )
     selected_chunks = [chunk for chunk in selected_chunks if not chunk.empty]
     if not selected_chunks:
         raise ValueError("No transactions found for selected customers")
+    return selected_chunks
 
+
+def _enrich_transactions(selected_chunks, articles, customers):
     result = pd.concat(selected_chunks, ignore_index=True)
     result = result.rename(columns=TRANSACTION_RENAMES)
     articles = articles.rename(columns=ARTICLE_RENAMES)
@@ -162,8 +204,11 @@ def prepare_cohort(
         or (result[CUSTOMER_METADATA_INDICATOR] != MERGE_MATCHED_VALUE).any()
     ):
         raise ValueError("Selected transactions are missing article or customer metadata")
-    result = result.drop(columns=[ARTICLE_METADATA_INDICATOR, CUSTOMER_METADATA_INDICATOR])
+    return result.drop(columns=[ARTICLE_METADATA_INDICATOR, CUSTOMER_METADATA_INDICATOR])
 
+
+def _filter_available_images(cohort, raw_dir, minimum_rows):
+    result = cohort.copy()
     result[ORDER_DATE_COLUMN] = pd.to_datetime(
         result[ORDER_DATE_COLUMN], errors=STRICT_PARSING_ERRORS
     )
@@ -175,17 +220,30 @@ def prepare_cohort(
         raise ValueError(
             f"Cohort has {len(result)} available-image rows; minimum_rows is {minimum_rows}"
         )
+    return result, missing_image_rows
 
-    result = result.loc[:, OUTPUT_COLUMNS].sort_values(OUTPUT_SORT_COLUMNS, kind="stable")
+
+def _write_cohort_and_summary(
+    cohort,
+    output_path,
+    active_customer_count,
+    selected_customer_count,
+    selected_transaction_count,
+    missing_image_rows,
+    seed,
+    cohort_size,
+    minimum_rows,
+):
+    output_path = Path(output_path)
+    result = cohort.loc[:, OUTPUT_COLUMNS].sort_values(OUTPUT_SORT_COLUMNS, kind="stable")
     output_path.parent.mkdir(parents=True, exist_ok=True)
     result.to_csv(output_path, index=False, date_format=CSV_DATE_FORMAT)
-
     summary = {
-        "active_customers": len(active_ids),
-        "selected_customers": len(selected),
-        "selected_transaction_rows": int(sum(len(chunk) for chunk in selected_chunks)),
+        "active_customers": active_customer_count,
+        "selected_customers": selected_customer_count,
+        "selected_transaction_rows": int(selected_transaction_count),
         "missing_image_rows": missing_image_rows,
-        "missing_image_rate": missing_image_rows / sum(len(chunk) for chunk in selected_chunks),
+        "missing_image_rate": missing_image_rows / selected_transaction_count,
         "output_rows": len(result),
         "output_columns": len(OUTPUT_COLUMNS),
         "date_range": {
@@ -198,7 +256,9 @@ def prepare_cohort(
         "output_sha256": _sha256(output_path),
     }
     summary_path = output_path.with_suffix(".summary.json")
-    summary_path.write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding=CSV_ENCODING)
+    summary_path.write_text(
+        json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding=CSV_ENCODING
+    )
     return summary
 
 
