@@ -49,7 +49,7 @@ class DataPreparationTest(unittest.TestCase):
                 "fashion_news_frequency",
             ],
         ).to_csv(self.raw_dir / "customers.csv", index=False)
-        image = np.zeros((2, 2, 3), dtype=np.uint8)
+        image = np.zeros((1750, 1166, 3), dtype=np.uint8)
         for article_id in ("0100000001", "0100000002", "0100000003"):
             matplotlib.image.imsave(
                 self.raw_dir / "images" / "010" / f"{article_id}.jpg", image
@@ -131,6 +131,32 @@ class DataPreparationTest(unittest.TestCase):
             self.assertEqual(summary["output_rows"], len(pd.read_csv(self.output_path)))
             self.assertEqual(summary["output_columns"], 11)
             self.assertTrue(self.output_path.with_suffix(".summary.json").is_file())
+
+    def test_prepare_cohort_excludes_transactions_with_nonstandard_image_shapes(self):
+        """A wrong image shape must not enter the prepared cohort."""
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            self.raw_dir = Path(temporary_directory)
+            self.output_path = self.raw_dir / "cohort.csv"
+            (self.raw_dir / "images" / "010").mkdir(parents=True)
+            self._write_hm_shaped_source()
+            matplotlib.image.imsave(
+                self.raw_dir / "images" / "010" / "0100000002.jpg",
+                np.zeros((1750, 1167, 3), dtype=np.uint8),
+            )
+
+            summary = prepare_cohort(
+                self.raw_dir,
+                self.output_path,
+                cohort_size=4,
+                seed=7,
+                chunksize=3,
+                minimum_rows=3,
+            )
+            result = pd.read_csv(self.output_path, dtype={"product_id": "string"})
+
+        self.assertNotIn("0100000002", result["product_id"].tolist())
+        self.assertEqual(len(result), 3)
+        self.assertEqual(summary["shape_mismatch_rows"], 1)
 
     def test_command_line_writes_the_requested_output(self):
         with tempfile.TemporaryDirectory() as temporary_directory:

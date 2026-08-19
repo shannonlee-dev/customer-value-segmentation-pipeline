@@ -43,6 +43,7 @@ TRANSACTIONS_FILENAME = "transactions_train.csv"
 ARTICLES_FILENAME = "articles.csv"
 CUSTOMERS_FILENAME = "customers.csv"
 IMAGES_DIRECTORY = "images"
+REQUIRED_IMAGE_SHAPE = (1750, 1166, 3)
 SHA256_BLOCK_SIZE = 1_024 * 1_024
 TRANSACTION_COLUMNS = [
     "t_dat",

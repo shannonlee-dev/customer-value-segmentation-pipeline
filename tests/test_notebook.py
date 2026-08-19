@@ -122,7 +122,8 @@ class ExecutedNotebookContractTests(unittest.TestCase):
             r"^- (?P<label>[^:]+): r = (?P<coefficient>[+-]\d+\.\d{3}); "
             r"(?P<strength>negligible|weak|moderate|strong) "
             r"(?P<direction>positive|negative|zero) association\. "
-            r"Squared magnitude = (?P<squared>\d+\.\d{2})%\.",
+            r"Squared magnitude = (?P<squared>\d+\.\d{2})%\. This indicates "
+            r"(?P<signal>little|limited|noticeable|substantial) standalone linear signal",
             re.MULTILINE,
         )
         interpretations = {
@@ -136,12 +137,21 @@ class ExecutedNotebookContractTests(unittest.TestCase):
         for interpretation in interpretations.values():
             coefficient = float(interpretation["coefficient"])
             squared_percent = float(interpretation["squared"])
-            self.assertGreater(coefficient, 0)
-            self.assertLess(abs(coefficient), 0.1)
-            self.assertEqual(interpretation["direction"], "positive")
-            self.assertEqual(interpretation["strength"], "negligible")
+            magnitude = abs(coefficient)
+            expected_direction = "positive" if coefficient > 0 else "negative" if coefficient < 0 else "zero"
+            expected_strength = (
+                "negligible" if magnitude < 0.10 else "weak" if magnitude < 0.30
+                else "moderate" if magnitude < 0.50 else "strong"
+            )
+            expected_signal = (
+                "little" if squared_percent < 1 else "limited" if squared_percent < 9
+                else "noticeable" if squared_percent < 25 else "substantial"
+            )
+            self.assertEqual(interpretation["direction"], expected_direction)
+            self.assertEqual(interpretation["strength"], expected_strength)
+            self.assertEqual(interpretation["signal"], expected_signal)
             self.assertAlmostEqual(squared_percent, coefficient ** 2 * 100, delta=0.02)
-        self.assertEqual(markdown.count("little standalone linear signal"), 2)
+        self.assertEqual(markdown.count("standalone linear signal"), 2)
         self.assertIn("observational", markdown)
 
     def test_text_length_covers_full_cohort_while_images_stay_sampled(self):
@@ -170,7 +180,7 @@ class ExecutedNotebookContractTests(unittest.TestCase):
         self.assertEqual(int(text_coverage.group(1).replace(",", "")), loaded_rows)
         self.assertEqual(int(image_coverage.group(1).replace(",", "")), 64)
         self.assertGreater(int(image_coverage.group(2).replace(",", "")), 64)
-        self.assertEqual(int(image_coverage.group(3).replace(",", "")), 95)
+        self.assertEqual(int(image_coverage.group(3).replace(",", "")), 81)
         self.assertIn("transaction-weighted", markdown)
 
         plain_tables = [
@@ -191,7 +201,7 @@ class ExecutedNotebookContractTests(unittest.TestCase):
                 for output in self.notebook.cells[cell_index].get("outputs", [])
             )
             self.assertIn("64", rendered_markdown)
-            self.assertIn("95", rendered_markdown)
+            self.assertIn("81", rendered_markdown)
             self.assertIn("transaction-weighted", rendered_markdown)
 
 

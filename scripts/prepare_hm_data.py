@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 
 import pandas as pd
+from matplotlib import image as mpimg
 
 if __package__:
     from .constants import (
@@ -32,6 +33,7 @@ if __package__:
         OUTPUT_COLUMNS,
         OUTPUT_SORT_COLUMNS,
         PRODUCT_ID_COLUMN,
+        REQUIRED_IMAGE_SHAPE,
         SHA256_BLOCK_SIZE,
         STRICT_PARSING_ERRORS,
         STRING_DTYPE,
@@ -63,6 +65,7 @@ else:
         OUTPUT_COLUMNS,
         OUTPUT_SORT_COLUMNS,
         PRODUCT_ID_COLUMN,
+        REQUIRED_IMAGE_SHAPE,
         SHA256_BLOCK_SIZE,
         STRICT_PARSING_ERRORS,
         STRING_DTYPE,
@@ -110,7 +113,9 @@ def prepare_cohort(
         transactions_path, selected_customer_ids, chunksize
     )
     cohort = _enrich_transactions(selected_chunks, articles, customers)
-    cohort, missing_image_rows = _filter_available_images(cohort, raw_dir, minimum_rows)
+    cohort, missing_image_rows, shape_mismatch_rows = _filter_available_images(
+        cohort, raw_dir, minimum_rows
+    )
     return _write_cohort_and_summary(
         cohort=cohort,
         output_path=output_path,
@@ -118,6 +123,7 @@ def prepare_cohort(
         selected_customer_count=len(selected_customer_ids),
         selected_transaction_count=sum(len(chunk) for chunk in selected_chunks),
         missing_image_rows=missing_image_rows,
+        shape_mismatch_rows=shape_mismatch_rows,
         seed=seed,
         cohort_size=cohort_size,
         minimum_rows=minimum_rows,
@@ -216,11 +222,20 @@ def _filter_available_images(cohort, raw_dir, minimum_rows):
     image_exists = result[IMAGE_PATH_COLUMN].map(lambda path: (raw_dir / path).is_file())
     missing_image_rows = int((~image_exists).sum())
     result = result.loc[image_exists].copy()
+    image_shapes = {
+        path: tuple(mpimg.imread(raw_dir / path).shape)
+        for path in result[IMAGE_PATH_COLUMN].drop_duplicates()
+    }
+    valid_paths = [
+        path for path, shape in image_shapes.items() if shape == REQUIRED_IMAGE_SHAPE
+    ]
+    shape_mismatch_rows = int((~result[IMAGE_PATH_COLUMN].isin(valid_paths)).sum())
+    result = result.loc[result[IMAGE_PATH_COLUMN].isin(valid_paths)].copy()
     if len(result) < minimum_rows:
         raise ValueError(
-            f"Cohort has {len(result)} available-image rows; minimum_rows is {minimum_rows}"
+            f"Cohort has {len(result)} supported-image rows; minimum_rows is {minimum_rows}"
         )
-    return result, missing_image_rows
+    return result, missing_image_rows, shape_mismatch_rows
 
 
 def _write_cohort_and_summary(
@@ -230,6 +245,7 @@ def _write_cohort_and_summary(
     selected_customer_count,
     selected_transaction_count,
     missing_image_rows,
+    shape_mismatch_rows,
     seed,
     cohort_size,
     minimum_rows,
@@ -244,6 +260,9 @@ def _write_cohort_and_summary(
         "selected_transaction_rows": int(selected_transaction_count),
         "missing_image_rows": missing_image_rows,
         "missing_image_rate": missing_image_rows / selected_transaction_count,
+        "shape_mismatch_rows": shape_mismatch_rows,
+        "shape_mismatch_rate": shape_mismatch_rows / selected_transaction_count,
+        "required_image_shape": REQUIRED_IMAGE_SHAPE,
         "output_rows": len(result),
         "output_columns": len(OUTPUT_COLUMNS),
         "date_range": {
