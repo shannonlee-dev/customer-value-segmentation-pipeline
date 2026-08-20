@@ -189,7 +189,7 @@ RMSE에서는 평균이 더 낮았는데, 이는 평균이 제곱오차를 최�
 
 R·F·M은 각각 순위를 4분위로 나눠 1–4점을 부여한다. 고정 금액 기준을 임의로 만들지 않고 데이터 분포에 상대적인 고객 위치를 비교하기 위한 선택이다. Recency는 작을수록 높은 점수, Frequency와 Monetary는 클수록 높은 점수를 받는다. 동점은 `rank(method="first")`로 결정적으로 정렬하지만, 분위 경계 양쪽 고객을 본질적으로 다른 고객으로 해석하지 않는다.
 
-세그먼트 규칙은 VIP(`R/F/M ≥ 3`), Loyal(`F ≥ 3`), New(`R = 4`, `F ≤ 2`), Churned(`R ≤ 2`), Potential(나머지) 순서로 적용한다. Notebook Run All은 각 그룹의 고객 수·고객 비중·Monetary 비중·평균 R/F/M을 계산하며, 실제 수치를 넣은 다음 세 가지 인사이트를 `artifacts/business_insights.md`에 생성한다.
+세그먼트 규칙은 VIP(`R = 4`, `F = 4`, `M = 4`), Loyal(`R ≥ 3`, `F ≥ 3`), New(`R = 4`, `F ≤ 2`), Churned(`R ≤ 2`), Potential(나머지) 순서로 적용한다. Notebook Run All은 각 그룹의 고객 수·고객 비중·Monetary 비중·평균 R/F/M을 계산하며, 실제 수치를 넣은 다음 세 가지 인사이트를 `artifacts/business_insights.md`에 생성한다.
 
 ## 비즈니스 인사이트
 

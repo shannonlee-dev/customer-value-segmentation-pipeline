@@ -160,7 +160,7 @@ The analysis date is a parameter. Its default is the final transaction date plus
 
 R, F, and M are each divided into four rank-based quantiles. Quartiles avoid inventing currency-specific business thresholds and create comparable 1–4 scores that transfer to another dataset. Lower Recency receives a higher score; higher Frequency and Monetary receive higher scores. `rank(method="first")` makes quantile assignment deterministic when customers share the same value, although customers next to a boundary should not be treated as fundamentally different.
 
-Rules are applied in priority order: strong scores on all three dimensions become **VIP**; high-frequency customers become **Loyal**; very recent low-frequency customers become **New**; low-recency-score customers become **Churned**; the remainder become **Potential**. Business validity is assessed below from observed customer share, Monetary share, and mean R/F/M rather than from labels alone."""),
+Rules are applied in priority order: customers with R = 4, F = 4, and M = 4 become **VIP**; customers with R >= 3 and F >= 3 become **Loyal**; very recent low-frequency customers become **New**; low-recency-score customers become **Churned**; the remainder become **Potential**. Business validity is assessed below from observed customer share, Monetary share, and mean R/F/M rather than from labels alone."""),
         new_code_cell("""segment_summary = summarize_rfm_segments(rfm)
 display(segment_summary.round(4))
 business_insights = build_business_insights(segment_summary)

@@ -88,8 +88,8 @@ RFM_REFERENCE_DAY_OFFSET = 1
 RFM_SCORE_QUANTILE_COUNT = 4
 RFM_SCORE_LABELS = (1, 2, 3, 4)
 RFM_HIGH_SCORE = 3
-RFM_BEST_RECENCY_SCORE = 4
-RFM_LOW_RECENCY_SCORE = 2
+RFM_BEST_SCORE = 4
+RFM_LOW_SCORE = 2
 RFM_SEGMENT_COLUMN = "segment"
 RFM_RECENCY_COLUMN = "recency"
 RFM_FREQUENCY_COLUMN = "frequency"
@@ -401,11 +401,12 @@ class DataAnalyzer:
         score_columns = [RFM_RECENCY_SCORE_COLUMN, RFM_FREQUENCY_SCORE_COLUMN, RFM_MONETARY_SCORE_COLUMN]
         rfm[RFM_SEGMENT_COLUMN] = np.select(
             [
-                (rfm[score_columns] >= RFM_HIGH_SCORE).all(axis=1),
-                rfm[RFM_FREQUENCY_SCORE_COLUMN] >= RFM_HIGH_SCORE,
-                (rfm[RFM_RECENCY_SCORE_COLUMN] == RFM_BEST_RECENCY_SCORE)
-                & (rfm[RFM_FREQUENCY_SCORE_COLUMN] <= RFM_LOW_RECENCY_SCORE),
-                rfm[RFM_RECENCY_SCORE_COLUMN] <= RFM_LOW_RECENCY_SCORE,
+                (rfm[score_columns] == RFM_BEST_SCORE).all(axis=1),
+                (rfm[RFM_RECENCY_SCORE_COLUMN] >= RFM_HIGH_SCORE)
+                & (rfm[RFM_FREQUENCY_SCORE_COLUMN] >= RFM_HIGH_SCORE),
+                (rfm[RFM_RECENCY_SCORE_COLUMN] == RFM_BEST_SCORE)
+                & (rfm[RFM_FREQUENCY_SCORE_COLUMN] <= RFM_LOW_SCORE),
+                rfm[RFM_RECENCY_SCORE_COLUMN] <= RFM_LOW_SCORE,
             ],
             [RFM_SEGMENT_VIP, RFM_SEGMENT_LOYAL, RFM_SEGMENT_NEW, RFM_SEGMENT_CHURNED],
             default=RFM_SEGMENT_POTENTIAL,
