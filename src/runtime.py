@@ -8,6 +8,9 @@ import os
 
 DATASET_FILES = ("transactions_train.csv", "customers.csv", "articles.csv", "images")
 KAGGLE_DATASET_RELATIVE_PATH = Path("input/competitions/h-and-m-personalized-fashion-recommendations")
+DEFAULT_PRECOMPUTED_ROOT = Path(
+    "/kaggle/input/notebooks/classichit/notebook9c33091b06/customer-value-segmentation-pipeline"
+)
 
 
 @dataclass(frozen=True)
@@ -17,6 +20,8 @@ class RuntimeContext:
     runtime_name: str
     project_root: Path
     raw_data_root: Path
+    precomputed_root: Path | None
+    runtime_mode: str
     runtime_root: Path
     processed_root: Path
     feature_root: Path
@@ -33,6 +38,7 @@ def discover_runtime(
     environment = os.environ if environ is None else environ
     root = (Path.cwd() if project_root is None else Path(project_root)).resolve()
     explicit = environment.get("HM_RAW_DATA_DIR")
+    precomputed_root = _resolve_precomputed_root(environment)
     kaggle_candidate = Path(kaggle_root) / KAGGLE_DATASET_RELATIVE_PATH
     local_candidate = root / "data" / "raw" / "h-and-m"
     if explicit:
@@ -65,6 +71,8 @@ def discover_runtime(
         runtime_name=runtime_name,
         project_root=root,
         raw_data_root=raw_data_root,
+        precomputed_root=precomputed_root,
+        runtime_mode="precomputed" if precomputed_root is not None else runtime_name,
         runtime_root=runtime_root,
         processed_root=processed_root,
         feature_root=feature_root,
@@ -75,6 +83,12 @@ def discover_runtime(
 
 def _is_dataset_root(path: Path) -> bool:
     return path.is_dir() and all((path / name).exists() for name in DATASET_FILES)
+
+
+def _resolve_precomputed_root(environment: Mapping[str, str]) -> Path | None:
+    explicit = environment.get("HM_PRECOMPUTED_DIR")
+    candidate = Path(explicit).expanduser() if explicit else DEFAULT_PRECOMPUTED_ROOT
+    return candidate.resolve() if candidate.is_dir() else None
 
 
 def _is_kaggle_path(path: Path, kaggle_root: Path) -> bool:

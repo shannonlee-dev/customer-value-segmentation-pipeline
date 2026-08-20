@@ -48,6 +48,46 @@ class RuntimeDiscoveryTests(unittest.TestCase):
         self.assertEqual(context.raw_data_root, candidate)
         self.assertEqual(context.runtime_root, kaggle_root / "working" / "hm-customer-value")
 
+    def test_precomputed_environment_takes_priority_over_default_root(self):
+        from src.runtime import discover_runtime
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            raw = root / "raw"
+            raw.mkdir()
+            self._source(raw)
+            precomputed = root / "precomputed"
+            precomputed.mkdir()
+
+            context = discover_runtime(
+                project_root=root,
+                environ={"HM_RAW_DATA_DIR": str(raw), "HM_PRECOMPUTED_DIR": str(precomputed)},
+                kaggle_root=root / "missing-kaggle",
+            )
+
+        self.assertEqual(context.precomputed_root, precomputed)
+        self.assertEqual(context.runtime_mode, "precomputed")
+
+    def test_precomputed_root_is_not_used_as_runtime_output(self):
+        from src.runtime import discover_runtime
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            raw = root / "raw"
+            raw.mkdir()
+            self._source(raw)
+            precomputed = root / "precomputed"
+            precomputed.mkdir()
+
+            context = discover_runtime(
+                project_root=root,
+                environ={"HM_RAW_DATA_DIR": str(raw), "HM_PRECOMPUTED_DIR": str(precomputed)},
+                kaggle_root=root / "missing-kaggle",
+            )
+
+            self.assertNotEqual(context.runtime_root, precomputed)
+            self.assertTrue(context.runtime_root.is_dir())
+
     def test_missing_dataset_has_actionable_error(self):
         from src.runtime import discover_runtime
 
