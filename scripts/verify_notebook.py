@@ -5,7 +5,13 @@ import hashlib
 from pathlib import Path
 import nbformat
 
-REQUIRED_MARKERS = ("Analysis scope: FULL DATASET", "Customer sampling: NONE", "Product sampling: NONE", "Image analysis sampling: NONE")
+REQUIRED_MARKERS = (
+    "Analysis scope: PROPORTIONAL STRATIFIED CUSTOMER SAMPLE",
+    "Customer sampling: 20,000 customers by club_member_status",
+    "Customer sampling seed:",
+    "Transaction sampling: NONE; all selected-customer transactions are retained",
+    "Product/image scope: all products referenced by selected-customer transactions",
+)
 
 
 def inspect_notebook(path, mode="executed"):
@@ -15,9 +21,7 @@ def inspect_notebook(path, mode="executed"):
         if any(cell.get("outputs") or cell.get("execution_count") is not None for cell in notebook.cells if cell.cell_type == "code"):
             raise ValueError("Source notebook must be clean")
         if not all(marker in source for marker in REQUIRED_MARKERS):
-            raise ValueError("Source notebook is missing full-data markers")
-        if any(token in source for token in ("feature_product_ids", "sampled_image_features", "cohort_size", "stable_customer_ids")):
-            raise ValueError("Source notebook contains sampled analysis")
+            raise ValueError("Source notebook is missing sampling markers")
         return {"status": "PASS", "mode": mode, "cell_count": len(notebook.cells)}
     code = [cell for cell in notebook.cells if cell.cell_type == "code"]
     if any(cell.execution_count is None for cell in code):

@@ -1,22 +1,24 @@
 # H&M 고객가치 세분화 파이프라인
 
-`notebooks/analysis_report.ipynb`를 열어 **Run All** 하면 H&M 전체 거래·고객·상품·이미지를 같은 코드로 분석한다. 원본 행과 이미지는 저장소에 포함하지 않는다. `price`는 데이터셋의 상대값이며 통화 금액으로 해석하지 않는다.
+`notebooks/analysis_report.ipynb`를 열어 **Run All** 하면 H&M 고객 20,000명을 기준으로 고객가치 세분화 분석을 실행한다. 원본 행과 이미지는 저장소에 포함하지 않는다. `price`는 데이터셋의 상대값이며 통화 금액으로 해석하지 않는다.
 
 ## 데이터와 범위
 
 [H&M Personalized Fashion Recommendations](https://www.kaggle.com/competitions/h-and-m-personalized-fashion-recommendations)는 거래 날짜·고객 속성·상품 텍스트/카테고리·상품 이미지를 하나의 `article_id`로 결합할 수 있어 선택했다. 사용 전 [competition rules](https://www.kaggle.com/competitions/h-and-m-personalized-fashion-recommendations/rules)를 수락해야 하며, 원본/처리 데이터와 자격 증명은 재배포하지 않는다.
 
-분석은 고객·거래·상품·이미지를 표본화하지 않는다. Pandas chunking으로 거래를 CSV cache에 기록하고, 이미지 하나씩 `matplotlib.image.imread`로 읽어 전체 배열에 `np.mean`, `np.std`를 적용한다. 픽셀에는 Python 반복문을 쓰지 않으며 이미지 전체를 한 텐서로 쌓지 않는다. 외부 분석 라이브러리는 NumPy, Pandas, Matplotlib, Seaborn뿐이다.
+분석 단위는 **고객 단위 비례 층화표본추출(proportional stratified customer sampling)** 이다. 전체 고객에서 `club_member_status`의 모집단 비율을 유지하도록 총 **20,000명**을 추출하고, 난수 seed `42`를 고정해 재현한다. 결측 회원상태도 독립된 층으로 처리한다. 표본에 포함된 고객은 관측 기간의 거래를 모두 유지하며, 그 거래에 등장한 상품과 이미지도 모두 연결한다.
+
+거래 행을 랜덤으로 뽑지 않는다. 행 단위 표본은 구매가 많은 고객을 과대표집하고 고객별 거래 이력을 불완전하게 만들어 Frequency·Monetary를 왜곡할 수 있다. 반면 고객을 먼저 뽑고 전체 거래 이력을 유지하면 표본 고객의 R/F/M 계산은 온전하게 보존된다. Pandas chunking으로 원본 거래를 읽어 선택 고객의 행만 CSV cache에 기록하고, 이미지 하나씩 `matplotlib.image.imread`로 읽어 전체 배열에 `np.mean`, `np.std`를 적용한다. 픽셀에는 Python 반복문을 쓰지 않으며 이미지 전체를 한 텐서로 쌓지 않는다. 외부 분석 라이브러리는 NumPy, Pandas, Matplotlib, Seaborn뿐이다.
 
 ## 구조
 
-`src/pipeline.py`의 `DataAnalyzer`가 public facade다. 전체 통합 거래 DataFrame은 만들지 않고 `transactions`, `customers`, `articles`, `image_features`를 각각의 grain으로 유지한다. 필요한 분석에서만 join하며, 노트북의 Dataset Inventory가 실행 시점의 shape와 schema를 보여준다.
+`src/pipeline.py`의 `DataAnalyzer`가 public facade다. 전체 통합 거래 DataFrame은 만들지 않고 표본 범위의 `transactions`, `customers`, `articles`, `image_features`를 각각의 grain으로 유지한다. 필요한 분석에서만 join하며, 노트북의 Dataset Inventory가 실행 시점의 shape와 schema를 보여준다.
 
-- `load_data()` — 전체 거래 chunk 처리와 스키마 검증
+- `load_data()` — 고객 비례 층화표본, 선택 고객의 전체 거래 chunk 처리와 스키마 검증
 - `handle_missing_values()` — 고객 단위 회원상태 그룹 중앙값 대치
-- `engineer_features()` — 전체 이용 가능 이미지 Mean/Std와 상품명 길이
-- `detect_outliers()` — 전체 가격 IQR
-- `calculate_rfm()` — 고객 hash partition 기반 전체 RFM
+- `engineer_features()` — 표본 거래에 연결된 이미지 Mean/Std와 상품명 길이
+- `detect_outliers()` — 표본 거래 가격 IQR
+- `calculate_rfm()` — 표본 고객 hash partition 기반 RFM
 
 나이 중앙값 대치는 고객 속성을 중복 거래마다 처리하지 않는 장점이 있지만 분산을 줄일 수 있다. IQR은 극단값에 강하지만 오른쪽으로 긴 정상 고가 상품을 이상치로 표시할 수 있다. RFM Frequency는 거래 행 수가 아니라 고유 구매일 수다.
 
@@ -46,10 +48,10 @@ HM_RAW_DATA_DIR=data/raw/h-and-m .venv/bin/jupyter notebook notebooks/analysis_r
 1. Kaggle에서 H&M competition 데이터셋을 Notebook Input으로 추가한다.
 2. 이 저장소를 Kaggle Notebook 작업 디렉터리(`/kaggle/working/customer-value-segmentation-pipeline`)에 업로드/clone한다. 인터넷이 꺼져 있으면 저장소 자체를 Kaggle Dataset Input으로 첨부한 뒤 해당 경로를 이 위치에 복사하고 `PROJECT_ROOT`를 설정한다.
 3. `notebooks/analysis_report.ipynb`를 열고 **Run All** 한다. Kaggle 입력 경로를 자동 탐색하고 `/kaggle/working/hm-customer-value`에 runtime CSV를 만든다.
-4. 마지막 `Final execution summary`, 여섯 차트, `image_mean`/`image_std` 컬럼, RFM 표가 모두 생성됐는지 확인한다.
+4. 마지막 `Final execution summary`에서 원본 고객 수, 표본 고객 수(기본 20,000), 거래·상품 수와 seed `42`를 확인하고 여섯 차트, `image_mean`/`image_std` 컬럼, RFM 표가 모두 생성됐는지 확인한다.
 5. **Save Version**으로 실행 결과를 보존한다. 그 결과의 실제 수치를 아래 인사이트 템플릿에 반영해 README를 갱신한다.
 
-실데이터를 이 저장소 환경에서 실행하거나 수치를 미리 주장하지 않는다.
+실데이터를 이 저장소 환경에서 실행하거나 표본 결과 수치를 미리 주장하지 않는다. 표본 크기 선택을 더 엄격히 검증하려면 5,000 / 10,000 / 20,000 고객에서 주요 통계와 RFM 비율의 안정성을 비교한다.
 
 ## Missing Value Handling: Age Imputation Strategy
 
@@ -60,7 +62,14 @@ HM_RAW_DATA_DIR=data/raw/h-and-m .venv/bin/jupyter notebook notebooks/analysis_r
 
 ### 1. 그룹 변수 선택
 
-연령 대치에 사용할 그룹 변수를 선택하기 위해 다음 후보를 비교하였다.
+연령 대치에 사용할 그룹 변수를 선택할 때는, 결측을 채우려는 대상·식별자·지나치게 세분화된 변수를 먼저 제외했다.
+
+1. `age`는 채우려는 **target** 자체이므로 그룹 변수 후보에서 제외했다.
+2. `customer_id`는 고객별로 거의 고유한 **식별자**이므로 동일한 고객 그룹의 대표 연령을 계산하는 데 적합하지 않다.
+3. `postal_code`는 그룹 수가 많은 **고카디널리티 변수**라 작은 그룹이 대량으로 생길 수 있고, 연령 대치 기준으로도 설명력이 약하다.
+4. `FN`, `Active`, `club_member_status`, `fashion_news_frequency`는 고객을 실제로 몇 개 그룹으로 나누는 **저카디널리티 고객 속성**이므로 후보로 선정했다.
+
+따라서 아래 저카디널리티 후보의 결측률과 연령 분포를 비교했다.
 
 | Candidate | Missing Rate |
 |---|---:|
@@ -211,8 +220,8 @@ R·F·M은 각각 순위를 4분위로 나눠 1–4점을 부여한다. 고정 �
 - **실행:** Loyal을 대상으로 구매 빈도 기반 단계형 혜택을 시험해 VIP 전환과 Monetary 상승을 기대한다.
 - **검증:** 혜택 노출·재고·반품·마진 데이터가 필요하며, 순증 Monetary가 혜택 비용을 넘지 못하면 전략을 반증한다.
 
-저장소에는 실행하지 않은 전체 데이터 수치를 미리 기록하지 않는다. Kaggle 전체 실행 후 생성되는 `business_insights.md`의 실제 수치를 README에 반영해야 최종 제출용 근거가 완성된다.
+저장소에는 실행하지 않은 표본 결과 수치를 미리 기록하지 않는다. Kaggle 표본 실행 후 생성되는 `business_insights.md`의 실제 수치를 README에 반영해야 최종 제출용 근거가 완성된다.
 
 ## 한계
 
-단순 이미지 밝기/표준편차와 상품명 길이는 의미론적 이미지 모델이 아니다. 상관관계는 인과관계가 아니다. 전체 거래가 크므로 주요 병목은 CSV I/O와 이미지 디코딩이며, RFM은 고객 hash partition, 가격 IQR은 디스크 기반 NumPy 배열로 메모리 사용을 제한한다.
+단순 이미지 밝기/표준편차와 상품명 길이는 의미론적 이미지 모델이 아니다. 상관관계는 인과관계가 아니다. 표본은 모집단 결과와 차이가 날 수 있으므로 고객 비율·RFM 비율의 안정성을 별도로 확인해야 한다. 원본 거래 스트리밍과 이미지 디코딩이 주요 병목이며, RFM은 고객 hash partition, 가격 IQR은 디스크 기반 NumPy 배열로 메모리 사용을 제한한다.

@@ -10,7 +10,7 @@ def build_notebook(path: Path = Path("notebooks/analysis_report.ipynb")) -> Path
     cells = [
         new_markdown_cell("""# H&M Customer Value Analysis
 
-Open this notebook and select **Run All**. It discovers Kaggle competition input, `data/raw/h-and-m`, or `HM_RAW_DATA_DIR` automatically. Every metric uses the full available dataset; no customer, transaction, product, or image analysis sampling is used."""),
+Open this notebook and select **Run All**. It discovers Kaggle competition input, `data/raw/h-and-m`, or `HM_RAW_DATA_DIR` automatically. The analysis uses a reproducible 20,000-customer proportional stratified sample; every selected customer's complete transaction history and its linked products/images are retained."""),
         new_code_cell("""import os
 import sys
 import time
@@ -48,13 +48,14 @@ print(f"Runtime: {context.runtime_name}")
 print("Project source: available")
 print("H&M source validation: PASS")
 print(f"Runtime artifact root: {context.runtime_root}")
-print("Analysis scope: FULL DATASET")
-print("Customer sampling: NONE")
-print("Product sampling: NONE")
-print("Image analysis sampling: NONE")"""),
-        new_markdown_cell("""## Full-data preparation and multimodal features
+print("Analysis scope: PROPORTIONAL STRATIFIED CUSTOMER SAMPLE")
+print("Customer sampling: 20,000 customers by club_member_status")
+print(f"Customer sampling seed: {analyzer.sampling_seed}")
+print("Transaction sampling: NONE; all selected-customer transactions are retained")
+print("Product/image scope: all products referenced by selected-customer transactions")"""),
+        new_markdown_cell("""## Sample preparation and multimodal features
 
-Transactions are read in Pandas chunks. `transactions`, `customers`, `articles`, and `image_features` remain at their natural grains. This avoids repeating customer and product attributes across tens of millions of transactions; only columns required by a statistic are joined, in chunks where necessary.
+The pipeline reads the full customer dimension only to select a proportional stratified sample by `club_member_status`. Transactions are then read in Pandas chunks and retained only for selected customers. `transactions`, `customers`, `articles`, and `image_features` remain at their natural grains; articles and images are restricted to product IDs appearing in retained transactions.
 
 Customer age is imputed once at customer grain. The median represents a typical age while being less sensitive than the mean to a skewed distribution, and `club_member_status` provides a reproducible customer grouping. The global median is a fallback when a group has no known ages. This preserves customers but can reduce variance and exaggerate apparent group differences.
 
@@ -86,9 +87,9 @@ print("Tables remain normalized by transaction, customer, product, and image-pro
 print("Image array processing: matplotlib imread + full-array NumPy np.mean/np.std")"""),
         new_markdown_cell("""## IQR, correlation, and visual analysis
 
-IQR uses the full price distribution. It is robust to extreme values because it uses the middle 50%, but a naturally right-skewed fashion-price distribution can still label legitimate premium products as outliers. The before/after boxplot below is therefore a diagnostic, not an instruction to delete data.
+IQR uses the retained transaction price distribution. It is robust to extreme values because it uses the middle 50%, but a naturally right-skewed fashion-price distribution can still label legitimate premium products as outliers. The before/after boxplot below is therefore a diagnostic, not an instruction to delete data.
 
-Correlation A is full transaction/customer scope: price versus customer age. Correlation B is full product/image scope: image mean versus product-name length. A correlation describes linear association, not causation."""),
+Correlation A is sampled transaction/customer scope: price versus customer age. Correlation B is sampled product/image scope: image mean versus product-name length. A correlation describes linear association, not causation."""),
         new_code_cell("""price_values = np.memmap(
     context.aggregate_root / "unit_price_values.dat",
     dtype="float64",
@@ -97,10 +98,10 @@ Correlation A is full transaction/customer scope: price versus customer age. Cor
 )
 inlier_prices = price_values[(price_values >= iqr["lower_fence"]) & (price_values <= iqr["upper_fence"])]
 price_statistics = summarize_numeric(price_values)
-display(pd.DataFrame([price_statistics], index=["unit_price (full transactions)"]).round(6))
+display(pd.DataFrame([price_statistics], index=["unit_price (sampled transactions)"]).round(6))
 distribution_note = "평균이 중앙값보다 높아 오른쪽 꼬리 가능성을 보여준다" if price_statistics["mean"] > price_statistics["median"] else "평균과 중앙값의 관계상 강한 오른쪽 꼬리 근거는 제한적이다"
 display(Markdown(
-    f"**전체 거래 가격 기술통계:** 평균은 `{price_statistics['mean']:.6f}`, 중앙값은 `{price_statistics['median']:.6f}`, "
+    f"**표본 거래 가격 기술통계:** 평균은 `{price_statistics['mean']:.6f}`, 중앙값은 `{price_statistics['median']:.6f}`, "
     f"표준편차는 `{price_statistics['std']:.6f}`이며 Q1–Q3는 `{price_statistics['q1']:.6f}–{price_statistics['q3']:.6f}`이다. "
     f"{distribution_note}. 따라서 평균만 보지 않고 중앙값과 사분위 범위를 함께 사용해야 한다."
 ))
@@ -180,8 +181,9 @@ insight_path = context.artifact_root / "business_insights.md"
 insight_path.write_text(business_insights, encoding="utf-8")
 print("Copy-ready business insights:", insight_path)
 display(Markdown("### Final execution summary"))
+print("Source customers:", summary["source_customer_rows"])
+print("Sampled customers:", summary["customer_rows"])
 print("Processed transactions:", summary["transaction_rows"])
-print("Processed customers:", summary["customer_rows"])
 print("Processed products:", summary["product_rows"])
 print("IQR outlier count:", iqr["outlier_count"])
 print("Total execution time (seconds):", round(time.monotonic() - started, 1))"""),

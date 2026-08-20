@@ -20,6 +20,8 @@ class NotebookSourceTests(unittest.TestCase):
         self.assertEqual(result["status"], "PASS")
         for token in ("DataAnalyzer", "Dataset Inventory", ".head()", ".info()", ".describe()", "detect_outliers", "calculate_rfm", "plt.hist", "plt.boxplot", "heatmap", "plt.scatter"):
             self.assertIn(token, source)
+        self.assertIn("PROPORTIONAL STRATIFIED CUSTOMER SAMPLE", source)
+        self.assertIn("20,000", source)
         self.assertNotIn("analysis_preview", source)
         self.assertNotIn("PIL", source)
         self.assertNotIn("duckdb", source.lower())

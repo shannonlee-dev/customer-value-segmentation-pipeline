@@ -17,6 +17,11 @@ class RepositoryContractTests(unittest.TestCase):
         self.assertIn("Kaggle", readme)
         self.assertIn("Run All", readme)
 
+    def test_readme_documents_customer_level_sampling(self):
+        readme = Path("README.md").read_text(encoding="utf-8")
+        self.assertIn("고객 단위 비례 층화표본추출", readme)
+        self.assertIn("20,000", readme)
+
 
 if __name__ == "__main__":
     unittest.main()
