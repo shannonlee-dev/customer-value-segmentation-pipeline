@@ -51,7 +51,7 @@ class ExecutedNotebookContractTests(unittest.TestCase):
             ("DataAnalyzer", "HM_RAW_DATA_DIR"),
             (".head(", "safe_preview"),
             (".info(", ".describe("),
-            ("missing", "handle_missing_values"),
+            ("missing", "handle_missing"),
             ("engineer_features", "product_name_length"),
             ("IQR", "boxplot"),
             ("correlation", "describe"),

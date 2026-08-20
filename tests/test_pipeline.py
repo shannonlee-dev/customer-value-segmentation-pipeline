@@ -44,7 +44,7 @@ class DataAnalyzerLoadAndImputationTests(unittest.TestCase):
         frame.loc[:1, "age"] = np.nan
         expected_global = frame["age"].median()
 
-        result = analyzer.handle_missing_values("age", "club_member_status", "median")
+        result = analyzer.handle_missing("age", "club_member_status", "median")
 
         self.assertFalse(result["age"].isna().any())
         self.assertTrue((result.loc[:1, "age"] == expected_global).all())
@@ -56,21 +56,21 @@ class DataAnalyzerLoadAndImputationTests(unittest.TestCase):
         with self.assertRaises(FileNotFoundError):
             analyzer.load_data()
 
-    def test_handle_missing_values_rejects_missing_columns(self):
+    def test_handle_missing_rejects_missing_columns(self):
         """A misspelled input column cannot produce a partial result."""
         analyzer = DataAnalyzer(self.csv_path, image_root=self.raw_dir)
         analyzer.load_data()
 
         with self.assertRaises(KeyError):
-            analyzer.handle_missing_values("not_a_column", "club_member_status")
+            analyzer.handle_missing("not_a_column", "club_member_status")
 
-    def test_handle_missing_values_rejects_nonnumeric_columns(self):
+    def test_handle_missing_rejects_nonnumeric_columns(self):
         """Median imputation is only defined for numeric data."""
         analyzer = DataAnalyzer(self.csv_path, image_root=self.raw_dir)
         analyzer.load_data()
 
         with self.assertRaises(TypeError):
-            analyzer.handle_missing_values("club_member_status", "customer_id")
+            analyzer.handle_missing("club_member_status", "customer_id")
 
     def test_load_data_rejects_an_empty_csv(self):
         """Analysis requires at least one cohort row."""
@@ -81,13 +81,13 @@ class DataAnalyzerLoadAndImputationTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             analyzer.load_data()
 
-    def test_handle_missing_values_rejects_an_unsupported_strategy(self):
+    def test_handle_missing_rejects_an_unsupported_strategy(self):
         """Only supported numeric aggregation strategies are accepted."""
         analyzer = DataAnalyzer(self.csv_path, image_root=self.raw_dir)
         analyzer.load_data()
 
         with self.assertRaises(ValueError):
-            analyzer.handle_missing_values("age", "club_member_status", "mode")
+            analyzer.handle_missing("age", "club_member_status", "mode")
 
 
 class DataAnalyzerImageFeatureTests(unittest.TestCase):

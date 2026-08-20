@@ -324,7 +324,7 @@ Expected: implementation and tests are together; no local data artifact is stage
 **Interfaces:**
 - Produces: `DataAnalyzer(data_path, image_root)`.
 - Produces: `load_data(date_columns=("order_date",), numeric_columns=("unit_price", "age")) -> pandas.DataFrame`.
-- Produces: `handle_missing_values(column, group_col, strategy="median") -> pandas.DataFrame`.
+- Produces: `handle_missing(column, group_col, strategy="median") -> pandas.DataFrame`.
 - Produces: `engineer_features(image_col="image_path", product_col="product_id", text_col="product_name", downsample_step=35) -> pandas.DataFrame`.
 - Produces: `detect_outliers(column, threshold=1.5) -> Tuple[pandas.DataFrame, float, float]`.
 - Produces: `calculate_rfm(customer_col="customer_id", date_col="order_date", amount_col="unit_price", frequency_mode="unique_dates", analysis_date=None) -> pandas.DataFrame`.
@@ -341,7 +341,7 @@ self.assertTrue(pd.api.types.is_datetime64_any_dtype(frame["order_date"]))
 frame.loc[:1, "club_member_status"] = "all-missing"
 frame.loc[:1, "age"] = np.nan
 expected_global = frame["age"].median()
-result = analyzer.handle_missing_values("age", "club_member_status", "median")
+result = analyzer.handle_missing("age", "club_member_status", "median")
 self.assertFalse(result["age"].isna().any())
 self.assertTrue((result.loc[:1, "age"] == expected_global).all())
 ```
@@ -642,7 +642,7 @@ analyzer = DataAnalyzer(
 )
 frame = analyzer.load_data()
 missing_age = int(frame["age"].isna().sum())
-analyzer.handle_missing_values("age", "club_member_status", "median")
+analyzer.handle_missing("age", "club_member_status", "median")
 analyzer.engineer_features()
 outliers, lower, upper = analyzer.detect_outliers("unit_price", 1.5)
 rfm = analyzer.calculate_rfm()

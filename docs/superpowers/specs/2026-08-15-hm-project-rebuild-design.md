@@ -79,7 +79,7 @@ table below the mission's minimum shape.
 `src/pipeline.py` defines `DataAnalyzer` with these public responsibilities:
 
 - `load_data()` validates and restores dates and numeric columns;
-- `handle_missing_values()` applies a group mean or median with a global
+- `handle_missing()` applies a group mean or median with a global
   fallback;
 - `engineer_features()` loads each unique image once, downsamples it with
   NumPy slicing, creates a stacked image tensor, and computes image Mean/Std

@@ -85,7 +85,7 @@ display(numeric_summary)"""
             """# Measure real missingness, then apply 그룹별 median imputation with global fallback.
 age_missing_before = int(frame["age"].isna().sum())
 age_missing_rate = float(frame["age"].isna().mean())
-frame = analyzer.handle_missing_values("age", "club_member_status", strategy="median")
+frame = analyzer.handle_missing("age", "club_member_status", strategy="median")
 age_missing_after = int(frame["age"].isna().sum())
 display(Markdown(
     f"**그룹별 결측치 처리:** age 결측치는 {age_missing_before:,}건 "

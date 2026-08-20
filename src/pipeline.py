@@ -67,7 +67,7 @@ class DataAnalyzer:
         self.data = frame
         return self.data
 
-    def handle_missing_values(
+    def handle_missing(
         self, column: str, group_col: str, strategy: str = DEFAULT_IMPUTATION_STRATEGY
     ) -> pd.DataFrame:
         """Fill numeric gaps from each group, then the global aggregate."""
