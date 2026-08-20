@@ -9,7 +9,26 @@ and the product-image files. `force=True` must explicitly rebuild an artifact.
 
 The notebook remains portable across Kaggle, `data/raw/h-and-m`, and an
 `HM_RAW_DATA_DIR` location. It must not add a separate local or Kaggle analysis
-path and must not use analysis sampling.
+path and must not use analysis sampling. A Kaggle notebook version that already
+contains full-data pipeline output may be attached as a read-only input and
+must be reused before raw data is recomputed.
+
+## Source discovery priority
+
+Artifact sources and raw sources have separate roles. Runtime artifacts are
+always writable; precomputed artifacts are immutable inputs. Resolution is:
+
+1. A valid artifact in the current writable runtime directory.
+2. A valid artifact below `HM_PRECOMPUTED_DIR`, when set.
+3. A valid artifact below
+   `/kaggle/input/notebooks/classichit/notebook9c33091b06/customer-value-segmentation-pipeline`.
+4. Full computation from raw H&M input (`HM_RAW_DATA_DIR`, then Kaggle
+   competition input, then `data/raw/h-and-m`).
+
+The precomputed-root directory is inspected recursively at runtime. Candidate
+files are accepted only after their expected grain and required columns have
+been validated; no nested artifact path is assumed. A rejected file reports
+its path and validation reason before the next source is attempted.
 
 ## Alternatives considered
 
@@ -55,16 +74,18 @@ calculate_rfm(..., force=False)
 prepare_eda_artifacts(force=False)
 ```
 
-On a valid hit, each method loads and returns its artifact without processing
-the corresponding raw source. On a miss, stale metadata, missing artifact, or
-`force=True`, it performs the existing full-data computation and atomically
-replaces the artifact and manifest entry.
+On a valid runtime or precomputed hit, each method loads and returns its
+artifact without processing the corresponding raw source. On a miss, stale
+metadata, missing artifact, or `force=True`, it performs the existing
+full-data computation and atomically replaces only the writable runtime
+artifact and manifest entry. It never writes to a precomputed root.
 
 The notebook calls the same `DataAnalyzer` methods in the usual order, then
-loads EDA summaries rather than rescanning transactions. It prints which
-artifacts were reused or rebuilt and documents that the artifacts are
-full-data outputs of the same pipeline. The six required charts use exact
-aggregates and boxplot statistics, not sampled transaction rows.
+loads EDA summaries rather than rescanning transactions. It prints runtime
+mode, selected precomputed root (if any), and `REUSED` or `COMPUTED` for each
+artifact. It documents that artifacts are full-data outputs of the same
+pipeline. The six required charts use exact aggregates and boxplot statistics,
+not sampled transaction rows.
 
 ## EDA cache detail
 
@@ -94,6 +115,9 @@ artifact.
   entry; changing RFM parameters invalidates its result.
 - A malformed or missing manifest entry is a cache miss, never a successful
   hit.
+- A precomputed artifact with an invalid CSV schema, empty data, missing
+  required columns, or unreadable file is rejected with a visible reason and
+  does not prevent fallback to another source or raw full-data computation.
 - Cache writes use a temporary sibling path followed by replacement, so an
   interrupted run cannot advertise a partial output as valid.
 - `force=True` bypasses otherwise valid entries and rebuilds with the same full
@@ -103,10 +127,13 @@ artifact.
 
 Tests will first demonstrate that cache-aware methods fail expectations before
 implementation, then verify that a second invocation succeeds after source
-files are made unavailable. Additional tests cover parameter invalidation,
-`force=True`, manifest corruption, and EDA artifact reuse. The synthetic
-end-to-end notebook run will be performed twice: first for artifact creation,
-then again after artifacts exist to confirm a cache-hit Run All completes.
+files are made unavailable. Additional tests cover precomputed image-feature
+reuse without invoking the decoder, precomputed RFM reuse without rebuilding
+partitions, read-only precomputed-root protection, invalid precomputed-schema
+fallback, parameter invalidation, `force=True`, manifest corruption, and EDA
+artifact reuse. The synthetic end-to-end notebook run will be performed twice:
+first for artifact creation, then again after artifacts exist to confirm a
+cache-hit Run All completes.
 
 No real H&M results will be fabricated. Full-data cache creation and full-data
 verification remain the user's Kaggle execution step.
