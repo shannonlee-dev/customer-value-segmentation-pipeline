@@ -10,7 +10,9 @@ def build_notebook(path: Path = Path("notebooks/analysis_report.ipynb")) -> Path
     cells = [
         new_markdown_cell("""# H&M Customer Value Analysis
 
-Open this notebook and select **Run All**. It discovers Kaggle competition input, `data/raw/h-and-m`, or `HM_RAW_DATA_DIR` automatically. Every metric uses the full available dataset; no customer, transaction, product, or image analysis sampling is used."""),
+Open this notebook and select **Run All**. It discovers a writable runtime cache, `HM_PRECOMPUTED_DIR`, the attached Kaggle full-data artifact, Kaggle competition input, `data/raw/h-and-m`, or `HM_RAW_DATA_DIR` automatically. Every metric uses the full available dataset; no customer, transaction, product, or image analysis sampling is used.
+
+Large raw-data preparation and image feature extraction are performed by the same `DataAnalyzer` and may reuse a validated **full-data artifact**. If no artifact is available, that same code processes the complete raw H&M data."""),
         new_code_cell("""import os
 import sys
 import time
@@ -45,6 +47,9 @@ context = discover_runtime(ROOT)
 analyzer = DataAnalyzer(context)
 started = time.monotonic()
 print(f"Runtime: {context.runtime_name}")
+print(f"Runtime mode: {context.runtime_mode}")
+if context.precomputed_root is not None:
+    print(f"Precomputed root: {context.precomputed_root}")
 print("Project source: available")
 print("H&M source validation: PASS")
 print(f"Runtime artifact root: {context.runtime_root}")
@@ -63,6 +68,8 @@ Each image file is read with `matplotlib.image.imread`. The file loop performs I
 image_features = analyzer.engineer_features()
 iqr = analyzer.detect_outliers()
 rfm = analyzer.calculate_rfm()
+eda = analyzer.prepare_eda_artifacts()
+print(analyzer.format_cache_report())
 
 transaction_schema = pd.read_csv(analyzer.transactions_path, nrows=0)
 customers = pd.read_csv(analyzer.customers_path, dtype={"customer_id": "string"})
@@ -89,14 +96,7 @@ print("Image array processing: matplotlib imread + full-array NumPy np.mean/np.s
 IQR uses the full price distribution. It is robust to extreme values because it uses the middle 50%, but a naturally right-skewed fashion-price distribution can still label legitimate premium products as outliers. The before/after boxplot below is therefore a diagnostic, not an instruction to delete data.
 
 Correlation A is full transaction/customer scope: price versus customer age. Correlation B is full product/image scope: image mean versus product-name length. A correlation describes linear association, not causation."""),
-        new_code_cell("""price_values = np.memmap(
-    context.aggregate_root / "unit_price_values.dat",
-    dtype="float64",
-    mode="r",
-    shape=(summary["transaction_rows"],),
-)
-inlier_prices = price_values[(price_values >= iqr["lower_fence"]) & (price_values <= iqr["upper_fence"])]
-price_statistics = summarize_numeric(price_values)
+        new_code_cell("""price_statistics = eda["price_statistics"]
 display(pd.DataFrame([price_statistics], index=["unit_price (full transactions)"]).round(6))
 distribution_note = "평균이 중앙값보다 높아 오른쪽 꼬리 가능성을 보여준다" if price_statistics["mean"] > price_statistics["median"] else "평균과 중앙값의 관계상 강한 오른쪽 꼬리 근거는 제한적이다"
 display(Markdown(
@@ -104,34 +104,23 @@ display(Markdown(
     f"표준편차는 `{price_statistics['std']:.6f}`이며 Q1–Q3는 `{price_statistics['q1']:.6f}–{price_statistics['q3']:.6f}`이다. "
     f"{distribution_note}. 따라서 평균만 보지 않고 중앙값과 사분위 범위를 함께 사용해야 한다."
 ))
-
-customer_age = pd.read_csv(context.processed_root / "customers.csv", dtype={"customer_id": "string"})[["customer_id", "age"]]
-pair_count = pair_x = pair_y = pair_xy = pair_x2 = pair_y2 = 0.0
-monthly_parts = []
-for transaction_chunk in pd.read_csv(context.processed_root / "transactions.csv", parse_dates=["order_date"], dtype={"customer_id": "string"}, chunksize=analyzer.chunksize):
-    price_age_chunk = transaction_chunk[["customer_id", "unit_price"]].merge(customer_age, on="customer_id", how="left").dropna()
-    x = price_age_chunk["unit_price"].to_numpy(dtype=float)
-    y = price_age_chunk["age"].to_numpy(dtype=float)
-    pair_count += len(x); pair_x += x.sum(); pair_y += y.sum(); pair_xy += (x * y).sum(); pair_x2 += (x * x).sum(); pair_y2 += (y * y).sum()
-    monthly_parts.append(transaction_chunk.groupby(transaction_chunk["order_date"].dt.to_period("M"))["unit_price"].sum())
-monthly_value = pd.concat(monthly_parts, axis=1).fillna(0).sum(axis=1)
-product_features = pd.read_csv(context.feature_root / "product_images.csv", dtype={"product_id": "string"}).merge(
-    pd.read_csv(context.processed_root / "articles.csv", dtype={"product_id": "string"})[["product_id", "product_name_length"]], on="product_id", how="left"
-)
-price_age_corr = (pair_count * pair_xy - pair_x * pair_y) / np.sqrt((pair_count * pair_x2 - pair_x ** 2) * (pair_count * pair_y2 - pair_y ** 2))
-image_text_corr = product_features[["image_mean", "product_name_length"]].corr().loc["image_mean", "product_name_length"]
+price_age_corr = eda["price_age_correlation"]
+image_text_corr = eda["image_text_correlation"]
+monthly_value = pd.read_csv(eda["monthly_summary_path"])
+product_features = image_features.merge(articles[["product_id", "product_name_length"]], on="product_id", how="left")
 display(Markdown(f"**Transaction/customer scope:** price–age correlation is `r = {price_age_corr:+.3f}`. This is a linear-association measure; age alone is unlikely to explain price when the magnitude is close to zero."))
 display(Markdown(f"**Product/image scope:** image-mean–name-length correlation is `r = {image_text_corr:+.3f}`. This measures association between simple visual brightness and text length, not product quality or demand."))
 
 plt.figure(figsize=(8, 4))
-plt.hist(price_values, bins=40)
+plt.stairs(eda["histogram_counts"], eda["histogram_edges"])
 plt.title("Relative Price Distribution")
 plt.xlabel("Relative dataset price value")
 plt.ylabel("Transaction count")
 plt.show()
 
 plt.figure(figsize=(8, 4))
-plt.boxplot([price_values, inlier_prices], tick_labels=["Before IQR", "After IQR"])
+ax = plt.gca()
+ax.bxp([eda["boxplot_before"], eda["boxplot_after"]], showfliers=False)
 plt.title("Relative Price Before vs After IQR Filtering")
 plt.xlabel("IQR treatment state")
 plt.ylabel("Relative dataset price value")
@@ -159,10 +148,11 @@ plt.ylabel("Aggregate relative dataset value")
 plt.show()
 
 plt.figure(figsize=(9, 4))
-monthly_value.sort_index().plot()
+plt.plot(monthly_value["order_month"], monthly_value["monetary"])
 plt.title("Monthly Aggregate Relative Dataset Value")
 plt.xlabel("Order month")
 plt.ylabel("Aggregate relative dataset value")
+plt.xticks(rotation=45)
 plt.show()"""),
         new_markdown_cell("""## RFM segmentation
 

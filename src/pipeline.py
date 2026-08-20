@@ -23,6 +23,9 @@ ARTICLES_CACHE_FILENAME = "articles.csv"
 IMAGE_FEATURES_CACHE_FILENAME = "product_images.csv"
 RFM_OUTPUT_FILENAME = "rfm.csv"
 IQR_OUTPUT_FILENAME = "iqr_{column}.json"
+EDA_SUMMARY_FILENAME = "eda_summary.json"
+MONTHLY_SUMMARY_FILENAME = "monthly_summary.csv"
+EDA_HISTOGRAM_BIN_COUNT = 40
 RFM_PARTITIONS_DIRECTORY = "rfm_partitions"
 RFM_PARTITION_FILENAME = "part_{index:02d}.csv"
 
@@ -412,6 +415,85 @@ class DataAnalyzer:
         self._record_status("RFM", "COMPUTED", self.rfm_path)
         return rfm
 
+    def prepare_eda_artifacts(self, *, force: bool = False) -> dict[str, object]:
+        """Persist exact full-data chart aggregates so report reuse never rescans transactions."""
+        runtime_summary = self.context.aggregate_root / EDA_SUMMARY_FILENAME
+        runtime_monthly = self.context.aggregate_root / MONTHLY_SUMMARY_FILENAME
+        if not force:
+            summary_path = self._find_reusable_json("EDA", runtime_summary, EDA_SUMMARY_FILENAME)
+            monthly_path = self._find_reusable_csv(
+                "monthly EDA", runtime_monthly, MONTHLY_SUMMARY_FILENAME, ("order_month", RFM_MONETARY_COLUMN)
+            )
+            if summary_path is not None and monthly_path is not None:
+                summary = json.loads(summary_path.read_text(encoding="utf-8"))
+                required = {"price_statistics", "histogram_edges", "histogram_counts", "boxplot_before", "boxplot_after", "price_age_correlation", "image_text_correlation"}
+                if required.issubset(summary):
+                    summary["monthly_summary_path"] = str(monthly_path)
+                    self._record_status("EDA", "REUSED", summary_path)
+                    return summary
+                self._record_rejection("EDA", summary_path, "missing required summary fields")
+
+        row_count = self._csv_row_count(self.transactions_path)
+        values_path = self.context.aggregate_root / f"{DEFAULT_OUTLIER_COLUMN}_values{IQR_CACHE_EXTENSION}"
+        if not values_path.is_file() or values_path.stat().st_size != row_count * np.dtype(MEMMAP_DTYPE).itemsize:
+            values = np.memmap(values_path, dtype=MEMMAP_DTYPE, mode=MEMMAP_WRITE_MODE, shape=(row_count,))
+            offset = 0
+            for chunk in pd.read_csv(self.transactions_path, usecols=[DEFAULT_OUTLIER_COLUMN], chunksize=self.chunksize):
+                numeric = pd.to_numeric(chunk[DEFAULT_OUTLIER_COLUMN], errors=STRICT_PARSING_ERRORS).to_numpy(dtype=MEMMAP_DTYPE)
+                values[offset : offset + len(numeric)] = numeric
+                offset += len(numeric)
+            del values
+        values = np.memmap(values_path, dtype=MEMMAP_DTYPE, mode="r", shape=(row_count,))
+        price_statistics = self._numeric_summary(values)
+        q1, q3 = price_statistics["q1"], price_statistics["q3"]
+        lower, upper = q1 - DEFAULT_IQR_THRESHOLD * (q3 - q1), q3 + DEFAULT_IQR_THRESHOLD * (q3 - q1)
+        inliers = values[(values >= lower) & (values <= upper)]
+
+        customers = pd.read_csv(self.customers_path, dtype={CUSTOMER_ID_COLUMN: STRING_DTYPE})[[CUSTOMER_ID_COLUMN, CUSTOMER_AGE_COLUMN]]
+        count = sum_x = sum_y = sum_xy = sum_x2 = sum_y2 = 0.0
+        monthly_totals: dict[str, float] = {}
+        for chunk in pd.read_csv(
+            self.transactions_path,
+            usecols=[CUSTOMER_ID_COLUMN, ORDER_DATE_COLUMN, UNIT_PRICE_COLUMN],
+            dtype={CUSTOMER_ID_COLUMN: STRING_DTYPE},
+            parse_dates=[ORDER_DATE_COLUMN],
+            chunksize=self.chunksize,
+        ):
+            paired = chunk[[CUSTOMER_ID_COLUMN, UNIT_PRICE_COLUMN]].merge(customers, on=CUSTOMER_ID_COLUMN, how="left").dropna()
+            x = paired[UNIT_PRICE_COLUMN].to_numpy(dtype=float)
+            y = paired[CUSTOMER_AGE_COLUMN].to_numpy(dtype=float)
+            count += len(x); sum_x += x.sum(); sum_y += y.sum(); sum_xy += (x * y).sum(); sum_x2 += (x * x).sum(); sum_y2 += (y * y).sum()
+            grouped = chunk.groupby(chunk[ORDER_DATE_COLUMN].dt.to_period("M"))[UNIT_PRICE_COLUMN].sum()
+            for month, total in grouped.items():
+                key = str(month)
+                monthly_totals[key] = monthly_totals.get(key, 0.0) + float(total)
+        denominator = np.sqrt((count * sum_x2 - sum_x ** 2) * (count * sum_y2 - sum_y ** 2))
+        price_age_correlation = 0.0 if denominator == 0 else float((count * sum_xy - sum_x * sum_y) / denominator)
+
+        images = self.engineer_features(force=force)
+        if self.articles is None:
+            self.articles = pd.read_csv(self.articles_path, dtype={PRODUCT_ID_COLUMN: STRING_DTYPE})
+        product_features = images.merge(self.articles[[PRODUCT_ID_COLUMN, PRODUCT_NAME_LENGTH_COLUMN]], on=PRODUCT_ID_COLUMN, how="left")
+        image_text_correlation = float(product_features[[IMAGE_MEAN_COLUMN, PRODUCT_NAME_LENGTH_COLUMN]].corr().iloc[0, 1])
+        histogram_counts, histogram_edges = np.histogram(values, bins=EDA_HISTOGRAM_BIN_COUNT)
+        summary = {
+            "price_statistics": price_statistics,
+            "histogram_counts": histogram_counts.astype(int).tolist(),
+            "histogram_edges": histogram_edges.astype(float).tolist(),
+            "boxplot_before": self._boxplot_statistics(values, "Before IQR"),
+            "boxplot_after": self._boxplot_statistics(inliers, "After IQR"),
+            "price_age_correlation": price_age_correlation,
+            "image_text_correlation": image_text_correlation,
+        }
+        monthly = pd.DataFrame(sorted(monthly_totals.items()), columns=["order_month", RFM_MONETARY_COLUMN])
+        monthly.to_csv(runtime_monthly, index=False)
+        runtime_summary.write_text(json.dumps(summary, indent=2), encoding="utf-8")
+        del values
+        self._record_status("monthly EDA", "COMPUTED", runtime_monthly)
+        self._record_status("EDA", "COMPUTED", runtime_summary)
+        summary["monthly_summary_path"] = str(runtime_monthly)
+        return summary
+
     def format_cache_report(self) -> str:
         """Return evaluator-facing full-data artifact reuse status."""
         lines = [f"Runtime mode: {'PRECOMPUTED FULL-DATA ARTIFACTS' if self.context.precomputed_root else self.context.runtime_name.upper()}"]
@@ -431,6 +513,23 @@ class DataAnalyzer:
                 "Attach the H&M competition input or set HM_RAW_DATA_DIR to rebuild it."
             )
         return self.context.raw_data_root
+
+    @staticmethod
+    def _numeric_summary(values: np.ndarray) -> dict[str, float | int]:
+        q1, median, q3 = np.quantile(values, [0.25, 0.50, 0.75])
+        return {
+            "count": int(values.size), "mean": float(np.mean(values)), "median": float(median),
+            "std": float(np.std(values, ddof=1)) if values.size > 1 else 0.0,
+            "q1": float(q1), "q3": float(q3), "min": float(np.min(values)), "max": float(np.max(values)),
+        }
+
+    @staticmethod
+    def _boxplot_statistics(values: np.ndarray, label: str) -> dict[str, float | str]:
+        q1, median, q3 = np.quantile(values, [0.25, 0.50, 0.75])
+        return {
+            "label": label, "q1": float(q1), "med": float(median), "q3": float(q3),
+            "whislo": float(np.min(values)), "whishi": float(np.max(values)),
+        }
 
     @staticmethod
     def _csv_row_count(path: Path) -> int:

@@ -43,11 +43,11 @@ HM_RAW_DATA_DIR=data/raw/h-and-m .venv/bin/jupyter notebook notebooks/analysis_r
 
 ## Kaggle 실데이터 검증
 
-1. Kaggle에서 H&M competition 데이터셋을 Notebook Input으로 추가한다.
-2. 이 저장소를 Kaggle Notebook 작업 디렉터리(`/kaggle/working/customer-value-segmentation-pipeline`)에 업로드/clone한다. 인터넷이 꺼져 있으면 저장소 자체를 Kaggle Dataset Input으로 첨부한 뒤 해당 경로를 이 위치에 복사하고 `PROJECT_ROOT`를 설정한다.
-3. `notebooks/analysis_report.ipynb`를 열고 **Run All** 한다. Kaggle 입력 경로를 자동 탐색하고 `/kaggle/working/hm-customer-value`에 runtime CSV를 만든다.
-4. 마지막 `Final execution summary`, 여섯 차트, `image_mean`/`image_std` 컬럼, RFM 표가 모두 생성됐는지 확인한다.
-5. **Save Version**으로 실행 결과를 보존한다. 그 결과의 실제 수치를 아래 인사이트 템플릿에 반영해 README를 갱신한다.
+1. 이 저장소와 이전 full-data Kaggle Notebook Version output을 Input으로 추가한다. 기본 경로가 다르면 `HM_PRECOMPUTED_DIR=/kaggle/input/...`를 설정한다.
+2. H&M competition raw input은 artifact 누락 또는 `force=True` 재계산 때만 추가하면 된다.
+3. `notebooks/analysis_report.ipynb`를 열고 **Run All** 한다.
+4. 출력의 `transactions`, `image features`, `IQR`, `RFM`, `EDA`가 `REUSED`인지 확인한다.
+5. 여섯 차트와 `Final execution summary`를 확인한 뒤 **Save Version** 한다. `/kaggle/input`에는 쓰지 않고 결과는 `/kaggle/working`에만 생성된다.
 
 실데이터를 이 저장소 환경에서 실행하거나 수치를 미리 주장하지 않는다.
 

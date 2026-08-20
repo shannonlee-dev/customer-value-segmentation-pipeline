@@ -177,6 +177,34 @@ class FullPipelineTests(unittest.TestCase):
         self.assertEqual(before, after)
         self.assertEqual(analyzer.artifact_status["image features"], "COMPUTED")
 
+    def test_precomputed_eda_summary_avoids_transaction_rebuild(self):
+        producer = self.analyzer()
+        producer.load_data()
+        producer.engineer_features()
+        producer.detect_outliers()
+        producer.calculate_rfm(partition_count=2)
+        producer.prepare_eda_artifacts()
+        precomputed = self.root / "precomputed-eda"
+        shutil.copytree(producer.context.runtime_root, precomputed)
+        analyzer = DataAnalyzer(
+            discover_runtime(
+                self.root,
+                {
+                    "HM_RAW_DATA_DIR": str(self.raw),
+                    "HM_PRECOMPUTED_DIR": str(precomputed),
+                    "HM_RUNTIME_DIR": str(self.root / "eda-runtime"),
+                },
+                self.root / "missing",
+            ),
+            chunksize=2,
+        )
+        (precomputed / "processed" / "transactions.csv").unlink()
+
+        summary = analyzer.prepare_eda_artifacts()
+
+        self.assertIn("price_statistics", summary)
+        self.assertEqual(analyzer.artifact_status["EDA"], "REUSED")
+
 
 if __name__ == "__main__":
     unittest.main()
