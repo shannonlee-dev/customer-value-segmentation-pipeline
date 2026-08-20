@@ -1,4 +1,4 @@
-"""Portable, full-data H&M analysis implemented with Pandas, NumPy, and Matplotlib."""
+"""Portable sampled H&M analysis implemented with Pandas, NumPy, and Matplotlib."""
 
 import numpy as np
 import pandas as pd
@@ -9,6 +9,8 @@ from .runtime import RuntimeContext
 
 # Runtime and cache defaults
 DEFAULT_CHUNKSIZE = 500_000
+DEFAULT_CUSTOMER_SAMPLE_SIZE = 20_000
+DEFAULT_SAMPLING_SEED = 42
 STRING_DTYPE = "string"
 STRICT_PARSING_ERRORS = "raise"
 CSV_WRITE_MODE = "w"
@@ -40,6 +42,7 @@ CUSTOMER_AGE_COLUMN = "age"
 AGE_RAW_COLUMN = "age_raw"
 AGE_WAS_MISSING_COLUMN = "age_was_missing"
 CUSTOMER_MEMBERSHIP_COLUMN = "club_member_status"
+MISSING_MEMBERSHIP_STRATUM = "<missing club_member_status>"
 FASHION_NEWS_COLUMN = "fashion_news_frequency"
 PRODUCT_NAME_COLUMN = "product_name"
 PRODUCT_NAME_LENGTH_COLUMN = "product_name_length"
@@ -100,9 +103,17 @@ RFM_SEGMENT_POTENTIAL = "Potential"
 class DataAnalyzer:
     """Public facade for loading, cleaning, feature engineering, IQR, and RFM."""
 
-    def __init__(self, context: RuntimeContext, chunksize: int = DEFAULT_CHUNKSIZE):
+    def __init__(
+        self,
+        context: RuntimeContext,
+        chunksize: int = DEFAULT_CHUNKSIZE,
+        customer_sample_size: int = DEFAULT_CUSTOMER_SAMPLE_SIZE,
+        sampling_seed: int = DEFAULT_SAMPLING_SEED,
+    ):
         self.context = context
         self.chunksize = chunksize
+        self.customer_sample_size = customer_sample_size
+        self.sampling_seed = sampling_seed
         self.transactions_path = context.processed_root / TRANSACTIONS_CACHE_FILENAME
         self.customers_path = context.processed_root / CUSTOMERS_CACHE_FILENAME
         self.articles_path = context.processed_root / ARTICLES_CACHE_FILENAME
@@ -111,7 +122,7 @@ class DataAnalyzer:
         self.articles: pd.DataFrame | None = None
 
     def load_data(self) -> dict[str, int]:
-        """Cache every source row as normalized CSV files; never sample analysis data."""
+        """Cache a proportional customer sample with complete selected-customer histories."""
         raw = self.context.raw_data_root
         customers = pd.read_csv(raw / RAW_CUSTOMERS_FILENAME, dtype={CUSTOMER_ID_COLUMN: STRING_DTYPE})
         articles = pd.read_csv(raw / RAW_ARTICLES_FILENAME, dtype={RAW_ARTICLE_ID_COLUMN: STRING_DTYPE})
@@ -119,14 +130,17 @@ class DataAnalyzer:
         self._require(articles, ARTICLE_REQUIRED_COLUMNS)
         self._validate_dimension_keys(customers, CUSTOMER_ID_COLUMN, RAW_CUSTOMERS_FILENAME)
         self._validate_dimension_keys(articles, RAW_ARTICLE_ID_COLUMN, RAW_ARTICLES_FILENAME)
+        source_customer_rows = len(customers)
+        source_customer_ids = set(customers[CUSTOMER_ID_COLUMN].tolist())
+        customers = self._select_customer_sample(customers)
         self.customers = customers.rename(columns={CUSTOMER_AGE_COLUMN: AGE_RAW_COLUMN})
+        self.handle_missing_values(AGE_RAW_COLUMN, CUSTOMER_MEMBERSHIP_COLUMN)
+        self.customers.to_csv(self.customers_path, index=False)
         self.articles = articles.rename(columns=ARTICLE_RENAMES)
         self.articles[PRODUCT_NAME_LENGTH_COLUMN] = self.articles[PRODUCT_NAME_COLUMN].astype(STRING_DTYPE).str.len()
         self.articles[IMAGE_PATH_COLUMN] = self.articles[PRODUCT_ID_COLUMN].map(
             lambda value: f"{IMAGE_DIRECTORY}/{value[:3]}/{value}{IMAGE_FILE_EXTENSION}"
         )
-        self.handle_missing_values(AGE_RAW_COLUMN, CUSTOMER_MEMBERSHIP_COLUMN)
-        self.customers.to_csv(self.customers_path, index=False)
         self.articles.to_csv(self.articles_path, index=False)
 
         total_rows, first_chunk = 0, True
@@ -139,7 +153,7 @@ class DataAnalyzer:
             self._require(chunk, RAW_TRANSACTION_COLUMNS)
             if chunk[[CUSTOMER_ID_COLUMN, RAW_ARTICLE_ID_COLUMN]].isna().any().any():
                 raise ValueError("transactions_train.csv contains missing identifiers")
-            if not chunk[CUSTOMER_ID_COLUMN].isin(self.customers[CUSTOMER_ID_COLUMN]).all():
+            if not chunk[CUSTOMER_ID_COLUMN].isin(source_customer_ids).all():
                 raise ValueError("transactions_train.csv references an unknown customer")
             if not chunk[RAW_ARTICLE_ID_COLUMN].isin(articles[RAW_ARTICLE_ID_COLUMN]).all():
                 raise ValueError("transactions_train.csv references an unknown article")
@@ -154,7 +168,32 @@ class DataAnalyzer:
             )
             first_chunk = False
             total_rows += len(frame)
-        return {"transaction_rows": total_rows, "customer_rows": len(self.customers), "product_rows": len(self.articles)}
+        return {
+            "source_customer_rows": source_customer_rows,
+            "transaction_rows": total_rows,
+            "customer_rows": len(self.customers),
+            "product_rows": len(self.articles),
+        }
+
+    def _select_customer_sample(self, customers: pd.DataFrame) -> pd.DataFrame:
+        """Select a reproducible proportional sample by membership status."""
+        if self.customer_sample_size <= 0:
+            raise ValueError("customer_sample_size must be positive")
+        if len(customers) <= self.customer_sample_size:
+            return customers.copy()
+        strata = customers[CUSTOMER_MEMBERSHIP_COLUMN].astype(STRING_DTYPE).fillna(MISSING_MEMBERSHIP_STRATUM)
+        counts = strata.value_counts(sort=False)
+        raw_quotas = counts * self.customer_sample_size / len(customers)
+        quotas = np.floor(raw_quotas).astype(int)
+        remaining = self.customer_sample_size - int(quotas.sum())
+        for stratum in (raw_quotas - quotas).sort_values(ascending=False, kind="stable").index[:remaining]:
+            quotas.loc[stratum] += 1
+        samples = [
+            customers.loc[strata.eq(stratum)].sample(n=quota, random_state=self.sampling_seed + index)
+            for index, (stratum, quota) in enumerate(quotas.items())
+            if quota > 0
+        ]
+        return pd.concat(samples).sort_index()
 
     def handle_missing_values(
         self,

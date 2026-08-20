@@ -37,9 +37,22 @@ class FullPipelineTests(unittest.TestCase):
         mpimg.imsave(images / "0010000002.jpg", np.full((3, 5), 0.2), cmap="gray")
         mpimg.imsave(images / "0010000003.jpg", np.full((5, 2, 4), 0.3))
 
-    def analyzer(self):
+    def analyzer(self, **kwargs):
         context = discover_runtime(self.root, {"HM_RAW_DATA_DIR": str(self.raw), "HM_RUNTIME_DIR": str(self.root / "runtime")}, self.root / "missing")
-        return DataAnalyzer(context, chunksize=2)
+        return DataAnalyzer(context, chunksize=2, **kwargs)
+
+    def test_customer_sampling_is_seeded_proportional_and_exact(self):
+        first = self.analyzer(customer_sample_size=3, sampling_seed=7)
+        second = self.analyzer(customer_sample_size=3, sampling_seed=7)
+        first_summary = first.load_data()
+        second.load_data()
+
+        first_customers = pd.read_csv(first.customers_path)
+        second_customers = pd.read_csv(second.customers_path)
+        self.assertEqual(first_summary["source_customer_rows"], 4)
+        self.assertEqual(len(first_customers), 3)
+        self.assertEqual(first_customers["club_member_status"].value_counts().to_dict(), {"ACTIVE": 2, "PRE-CREATE": 1})
+        self.assertEqual(first_customers["customer_id"].tolist(), second_customers["customer_id"].tolist())
 
     def test_loads_every_transaction_and_imputes_customer_age(self):
         analyzer = self.analyzer()
