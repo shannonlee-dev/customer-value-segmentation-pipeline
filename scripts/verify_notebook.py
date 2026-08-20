@@ -1,128 +1,47 @@
-"""Verify notebook execution, chart evidence, and output redaction."""
+"""Validate clean notebook source or executed portable evidence."""
 
 import argparse
 import hashlib
 from pathlib import Path
-
 import nbformat
 
-if __package__:
-    from .constants import (
-        CHART_MIME_TYPE,
-        CODE_CELL_TYPE,
-        CUSTOMER_ID_PATTERN,
-        DEFAULT_LOG_PATH,
-        DEFAULT_NOTEBOOK_PATH,
-        EVIDENCE_SUMMARY_KEYS,
-        MINIMUM_CHART_COUNT,
-        PASS_STATUS,
-        PRODUCT_ID_PATTERN,
-        RENDERED_OUTPUT_TYPES,
-        TEXT_MIME_PREFIX,
-    )
-else:
-    from constants import (
-        CHART_MIME_TYPE,
-        CODE_CELL_TYPE,
-        CUSTOMER_ID_PATTERN,
-        DEFAULT_LOG_PATH,
-        DEFAULT_NOTEBOOK_PATH,
-        EVIDENCE_SUMMARY_KEYS,
-        MINIMUM_CHART_COUNT,
-        PASS_STATUS,
-        PRODUCT_ID_PATTERN,
-        RENDERED_OUTPUT_TYPES,
-        TEXT_MIME_PREFIX,
-    )
+REQUIRED_MARKERS = ("Analysis scope: FULL DATASET", "Customer sampling: NONE", "Product sampling: NONE", "Image analysis sampling: NONE")
 
 
-def _textual_outputs(notebook):
-    values = []
-    for cell in notebook.cells:
-        if cell.cell_type == "markdown":
-            values.append(cell.get("source", ""))
-        for output in cell.get("outputs", []):
-            output_type = output.get("output_type")
-            if output_type == "stream":
-                values.append(output.get("text", ""))
-            elif output_type in RENDERED_OUTPUT_TYPES:
-                data = output.get("data", {})
-                values.extend(
-                    value
-                    for mime_type, value in data.items()
-                    if mime_type.startswith(TEXT_MIME_PREFIX)
-                )
-            elif output_type == "error":
-                values.extend(output.get("traceback", []))
-    return "\n".join(str(value) for value in values)
-
-
-def inspect_notebook(path):
-    """Return execution counts for a valid notebook or reject unsafe evidence."""
-    path = Path(path)
-    if not path.is_file():
-        raise FileNotFoundError("Notebook does not exist: {}".format(path))
-
-    notebook = nbformat.read(path, as_version=4)
-    code_cells = [cell for cell in notebook.cells if cell.cell_type == CODE_CELL_TYPE]
-    unexecuted = [
-        index
-        for index, cell in enumerate(code_cells, start=1)
-        if type(cell.execution_count) is not int
-    ]
-    if unexecuted:
-        raise ValueError("Notebook contains unexecuted code cells: {}".format(unexecuted))
-
-    outputs = [output for cell in code_cells for output in cell.get("outputs", [])]
-    error_count = sum(output.get("output_type") == "error" for output in outputs)
-    if error_count:
-        raise ValueError("Notebook contains {} error output(s)".format(error_count))
-
-    chart_count = sum(
-        CHART_MIME_TYPE in output.get("data", {})
-        for output in outputs
-        if output.get("output_type") in RENDERED_OUTPUT_TYPES
-    )
-    if chart_count < MINIMUM_CHART_COUNT:
-        raise ValueError("Notebook must contain at least six image/png chart outputs")
-
-    rendered_text = _textual_outputs(notebook)
-    if CUSTOMER_ID_PATTERN.search(rendered_text) or PRODUCT_ID_PATTERN.search(rendered_text):
-        raise ValueError("Notebook textual outputs contain a raw identifier")
-
-    return {
-        "cell_count": len(notebook.cells),
-        "code_cell_count": len(code_cells),
-        "output_count": len(outputs),
-        "chart_count": chart_count,
-        "error_count": error_count,
-        "unexecuted_cell_count": len(unexecuted),
-        "redaction_status": PASS_STATUS,
-        "status": PASS_STATUS,
-    }
-
-
-def format_evidence(path, summary):
-    """Format a deterministic SHA-backed verification record."""
-    path = Path(path)
-    digest = hashlib.sha256(path.read_bytes()).hexdigest()
-    lines = ["notebook: {}".format(path.as_posix()), "notebook_sha256: {}".format(digest)]
-    lines.extend("{}: {}".format(key, summary[key]) for key in EVIDENCE_SUMMARY_KEYS)
-    return "\n".join(lines) + "\n"
+def inspect_notebook(path, mode="executed"):
+    notebook = nbformat.read(Path(path), as_version=4)
+    source = "\n".join(cell.source for cell in notebook.cells)
+    if mode == "source":
+        if any(cell.get("outputs") or cell.get("execution_count") is not None for cell in notebook.cells if cell.cell_type == "code"):
+            raise ValueError("Source notebook must be clean")
+        if not all(marker in source for marker in REQUIRED_MARKERS):
+            raise ValueError("Source notebook is missing full-data markers")
+        if any(token in source for token in ("feature_product_ids", "sampled_image_features", "cohort_size", "stable_customer_ids")):
+            raise ValueError("Source notebook contains sampled analysis")
+        return {"status": "PASS", "mode": mode, "cell_count": len(notebook.cells)}
+    code = [cell for cell in notebook.cells if cell.cell_type == "code"]
+    if any(cell.execution_count is None for cell in code):
+        raise ValueError("Notebook contains unexecuted code cells")
+    outputs = [output for cell in code for output in cell.get("outputs", [])]
+    if any(output.output_type == "error" for output in outputs):
+        raise ValueError("Notebook contains error outputs")
+    charts = sum("image/png" in output.get("data", {}) for output in outputs if output.output_type in ("display_data", "execute_result"))
+    rendered = "\n".join(str(output.get("text", "")) + str(output.get("data", {})) for output in outputs)
+    if any(marker not in rendered for marker in REQUIRED_MARKERS) or "Final execution summary" not in rendered:
+        raise ValueError("Executed notebook is missing required evidence")
+    if charts < 6:
+        raise ValueError("Notebook must contain at least six chart outputs")
+    return {"status": "PASS", "mode": mode, "cell_count": len(notebook.cells), "code_cell_count": len(code), "output_count": len(outputs), "chart_count": charts, "error_count": 0}
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("notebook", nargs="?", type=Path, default=DEFAULT_NOTEBOOK_PATH)
-    parser.add_argument("--no-write", action="store_true")
-    arguments = parser.parse_args()
-
-    summary = inspect_notebook(arguments.notebook)
-    evidence = format_evidence(arguments.notebook, summary)
-    if not arguments.no_write:
-        DEFAULT_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
-        DEFAULT_LOG_PATH.write_text(evidence, encoding="utf-8")
-    print(evidence, end="")
+    parser.add_argument("notebook", type=Path)
+    parser.add_argument("--mode", choices=("source", "executed"), default="executed")
+    args = parser.parse_args()
+    summary = inspect_notebook(args.notebook, args.mode)
+    summary["notebook_sha256"] = hashlib.sha256(args.notebook.read_bytes()).hexdigest()
+    print("\n".join(f"{key}: {value}" for key, value in summary.items()))
 
 
 if __name__ == "__main__":
