@@ -38,6 +38,7 @@ ROOT = find_project_root()
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 from src.pipeline import DataAnalyzer
+from src.reporting import build_business_insights, summarize_numeric, summarize_rfm_segments
 from src.runtime import discover_runtime
 
 context = discover_runtime(ROOT)
@@ -53,7 +54,9 @@ print("Product sampling: NONE")
 print("Image analysis sampling: NONE")"""),
         new_markdown_cell("""## Full-data preparation and multimodal features
 
-Transactions are read in Pandas chunks. Customer age is imputed once at customer grain with the median within `club_member_status`, then falls back to the global median. This respects a customer attribute's grain, but repeated median values can reduce observed age variance and can exaggerate apparent group differences.
+Transactions are read in Pandas chunks. `transactions`, `customers`, `articles`, and `image_features` remain at their natural grains. This avoids repeating customer and product attributes across tens of millions of transactions; only columns required by a statistic are joined, in chunks where necessary.
+
+Customer age is imputed once at customer grain. The median represents a typical age while being less sensitive than the mean to a skewed distribution, and `club_member_status` provides a reproducible customer grouping. The global median is a fallback when a group has no known ages. This preserves customers but can reduce variance and exaggerate apparent group differences.
 
 Each image file is read with `matplotlib.image.imread`. The file loop performs I/O only; the image-internal calculation is NumPy vectorized over the complete decoded array with `np.mean` and `np.std`. Images are never stacked into one global tensor."""),
         new_code_cell("""summary = analyzer.load_data()
@@ -93,6 +96,14 @@ Correlation A is full transaction/customer scope: price versus customer age. Cor
     shape=(summary["transaction_rows"],),
 )
 inlier_prices = price_values[(price_values >= iqr["lower_fence"]) & (price_values <= iqr["upper_fence"])]
+price_statistics = summarize_numeric(price_values)
+display(pd.DataFrame([price_statistics], index=["unit_price (full transactions)"]).round(6))
+distribution_note = "평균이 중앙값보다 높아 오른쪽 꼬리 가능성을 보여준다" if price_statistics["mean"] > price_statistics["median"] else "평균과 중앙값의 관계상 강한 오른쪽 꼬리 근거는 제한적이다"
+display(Markdown(
+    f"**전체 거래 가격 기술통계:** 평균은 `{price_statistics['mean']:.6f}`, 중앙값은 `{price_statistics['median']:.6f}`, "
+    f"표준편차는 `{price_statistics['std']:.6f}`이며 Q1–Q3는 `{price_statistics['q1']:.6f}–{price_statistics['q3']:.6f}`이다. "
+    f"{distribution_note}. 따라서 평균만 보지 않고 중앙값과 사분위 범위를 함께 사용해야 한다."
+))
 
 customer_age = pd.read_csv(context.processed_root / "customers.csv", dtype={"customer_id": "string"})[["customer_id", "age"]]
 pair_count = pair_x = pair_y = pair_xy = pair_x2 = pair_y2 = 0.0
@@ -155,14 +166,19 @@ plt.ylabel("Aggregate relative dataset value")
 plt.show()"""),
         new_markdown_cell("""## RFM segmentation
 
-The analysis date is a parameter. Its default is the final transaction date plus one day, so the newest purchaser has a positive recency of one day. Frequency is the number of unique purchase dates, while monetary is the sum of the relative transaction value. The five reported groups are **VIP**, **Loyal**, **New**, **Potential**, and **Churned**."""),
-        new_code_cell("""segment_summary = rfm.groupby("segment").agg(
-    customers=("customer_id", "size"),
-    mean_recency=("recency", "mean"),
-    mean_frequency=("frequency", "mean"),
-    mean_monetary=("monetary", "mean"),
-).sort_values("customers", ascending=False)
-display(segment_summary)
+The analysis date is a parameter. Its default is the final transaction date plus one day, so the newest purchaser has a positive recency of one day. Frequency is the number of unique purchase dates, preventing multiple product rows bought on the same day from inflating purchase frequency. Monetary is the sum of the relative transaction value.
+
+R, F, and M are each divided into four rank-based quantiles. Quartiles avoid inventing currency-specific business thresholds and create comparable 1–4 scores that transfer to another dataset. Lower Recency receives a higher score; higher Frequency and Monetary receive higher scores. `rank(method="first")` makes quantile assignment deterministic when customers share the same value, although customers next to a boundary should not be treated as fundamentally different.
+
+Rules are applied in priority order: strong scores on all three dimensions become **VIP**; high-frequency customers become **Loyal**; very recent low-frequency customers become **New**; low-recency-score customers become **Churned**; the remainder become **Potential**. Business validity is assessed below from observed customer share, Monetary share, and mean R/F/M rather than from labels alone."""),
+        new_code_cell("""segment_summary = summarize_rfm_segments(rfm)
+display(segment_summary.round(4))
+business_insights = build_business_insights(segment_summary)
+display(Markdown("## Runtime Business Insights"))
+display(Markdown(business_insights))
+insight_path = context.artifact_root / "business_insights.md"
+insight_path.write_text(business_insights, encoding="utf-8")
+print("Copy-ready business insights:", insight_path)
 display(Markdown("### Final execution summary"))
 print("Processed transactions:", summary["transaction_rows"])
 print("Processed customers:", summary["customer_rows"])
