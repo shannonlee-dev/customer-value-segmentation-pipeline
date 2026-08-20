@@ -262,7 +262,7 @@ class DataAnalyzer:
         column: str = DEFAULT_OUTLIER_COLUMN,
         threshold: float = DEFAULT_IQR_THRESHOLD,
     ) -> dict[str, float | int]:
-        """Calculate exact full-data IQR fences and counts with a disk-backed NumPy array."""
+        """Calculate exact sampled-data IQR fences and counts with a disk-backed NumPy array."""
         row_count = sum(len(chunk) for chunk in pd.read_csv(self.transactions_path, usecols=[column], chunksize=self.chunksize))
         cache_path = self.context.aggregate_root / f"{column}_values{IQR_CACHE_EXTENSION}"
         values = np.memmap(cache_path, dtype=MEMMAP_DTYPE, mode=MEMMAP_WRITE_MODE, shape=(row_count,))

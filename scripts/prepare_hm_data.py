@@ -1,4 +1,4 @@
-"""Build the full local CSV runtime cache without analysis sampling."""
+"""Build the default stratified-customer local CSV runtime cache."""
 
 import argparse
 import json
