@@ -1,128 +1,198 @@
 # H&M 고객가치 세분화 파이프라인
 
-## 목표와 미션 대응
+`notebooks/analysis_report.ipynb`를 열어 **Run All** 하면 H&M 전체 거래·고객·상품·이미지를 같은 코드로 분석한다. 원본 행과 이미지는 저장소에 포함하지 않는다. `price`는 데이터셋의 상대값이며 통화 금액으로 해석하지 않는다.
 
-이 프로젝트는 H&M 구매 이력, 고객 속성, 상품 텍스트·카테고리, 상품 이미지를 결합해 고객가치 세그먼트를 설명하는 재현 가능한 분석이다. 결정적 표본화, 결측치 처리, 이미지·텍스트 특징, IQR 이상치 점검, 고유 구매일 기준 RFM, 실행 완료 노트북, 개인정보·재배포 경계를 하나의 작업 흐름으로 남긴다. `price`는 데이터셋의 상대값이며 특정 통화 금액으로 해석하지 않는다.
+## 데이터와 범위
 
-## 데이터를 찾은 방법
+[H&M Personalized Fashion Recommendations](https://www.kaggle.com/competitions/h-and-m-personalized-fashion-recommendations)는 거래 날짜·고객 속성·상품 텍스트/카테고리·상품 이미지를 하나의 `article_id`로 결합할 수 있어 선택했다. 사용 전 [competition rules](https://www.kaggle.com/competitions/h-and-m-personalized-fashion-recommendations/rules)를 수락해야 하며, 원본/처리 데이터와 자격 증명은 재배포하지 않는다.
 
-Kaggle, AI Hub, UCI Online Retail, Olist, 이미지 전용 자료를 먼저 비교했다. 거래 이력, 고객과 날짜, 상품 텍스트·카테고리, 실제 이미지를 **동시에** 제공하고 자연스럽게 결합 가능한지를 기준으로 걸렀다. AI Hub와 이미지 전용 자료는 구매·고객 시계열이 부족했고, UCI Online Retail과 Olist는 이 프로젝트에 필요한 상품 이미지 결합 조건을 충족하지 못했다.
+분석은 고객·거래·상품·이미지를 표본화하지 않는다. Pandas chunking으로 거래를 CSV cache에 기록하고, 이미지 하나씩 `matplotlib.image.imread`로 읽어 전체 배열에 `np.mean`, `np.std`를 적용한다. 픽셀에는 Python 반복문을 쓰지 않으며 이미지 전체를 한 텐서로 쌓지 않는다. 외부 분석 라이브러리는 NumPy, Pandas, Matplotlib, Seaborn뿐이다.
 
-## 선택한 이유
+## 구조
 
-[H&M Personalized Fashion Recommendations](https://www.kaggle.com/competitions/h-and-m-personalized-fashion-recommendations)는 거래·상품·고객·이미지를 `article_id` 하나로 자연스럽게 연결한다. 따라서 구매일과 상대 가격으로 RFM을 만들고, 상품명 길이·카테고리·이미지 통계를 같은 분석 표본에서 다룰 수 있다. 여러 출처를 억지로 결합하거나 행동 값을 추정하지 않아도 된다는 점이 선택의 핵심이다.
+`src/pipeline.py`의 `DataAnalyzer`가 public facade다. 전체 통합 거래 DataFrame은 만들지 않고 `transactions`, `customers`, `articles`, `image_features`를 각각의 grain으로 유지한다. 필요한 분석에서만 join하며, 노트북의 Dataset Inventory가 실행 시점의 shape와 schema를 보여준다.
 
-## 라이선스 및 사용 조건
+- `load_data()` — 전체 거래 chunk 처리와 스키마 검증
+- `handle_missing_values()` — 고객 단위 회원상태 그룹 중앙값 대치
+- `engineer_features()` — 전체 이용 가능 이미지 Mean/Std와 상품명 길이
+- `detect_outliers()` — 전체 가격 IQR
+- `calculate_rfm()` — 고객 hash partition 기반 전체 RFM
 
-데이터를 받기 전에 Kaggle 로그인 상태에서 공식 [대회 페이지](https://www.kaggle.com/competitions/h-and-m-personalized-fashion-recommendations)와 [competition rules](https://www.kaggle.com/competitions/h-and-m-personalized-fashion-recommendations/rules)를 검토하고 대회 조건을 수락해야 한다. 사용 범위는 대회 규칙의 비상업적·학술적 경계 안에 둔다. 원본 파일, 처리된 행 단위 파일, 이미지, 자격 증명은 내려받은 환경에만 두며 원본/처리 데이터를 재배포하지 않는다. 이 데이터에 CC 또는 MIT 라이선스를 주장하지 않는다.
+나이 중앙값 대치는 고객 속성을 중복 거래마다 처리하지 않는 장점이 있지만 분산을 줄일 수 있다. IQR은 극단값에 강하지만 오른쪽으로 긴 정상 고가 상품을 이상치로 표시할 수 있다. RFM Frequency는 거래 행 수가 아니라 고유 구매일 수다.
 
-## 출처 매핑과 결정적 코호트
+## 로컬 실행
 
-| 분석 열 | 공식 원천 열/규칙 |
-| --- | --- |
-| 구매일, 상대 가격, 판매 채널 | `transactions_train.csv`의 `t_dat`, `price`, `sales_channel_id` |
-| 고객 속성 | `customers.csv`의 `age`, `club_member_status`, `fashion_news_frequency` |
-| 상품 텍스트와 카테고리 | `articles.csv`의 `prod_name`, `product_group_name` |
-| 이미지 경로 | `article_id`에서 계산한 로컬 이미지 경로 |
-
-활성 고객 전체에서 `SHA-256(seed + ":" + customer_id)`의 오름차순 앞 **500**명을 고른다(기본 seed 42). 구매액·최근성·빈도를 보고 뽑지 않으므로 재실행해도 같은 고객 집합이 나오며 선택 편향을 가치 기준으로 추가하지 않는다. 상품·고객 메타데이터의 누락 또는 키 중복은 **fail-fast 검증 오류**로 처리한다. 메타데이터 결함을 조용히 제외하지 않으며, 선택된 거래 중 로컬 이미지 파일이 없거나 원본 shape가 `(1750, 1166, 3)`이 아닌 행은 제외하고 각각의 수와 비율을 로컬 요약에 기록한다. 실제 식별자, 상품명, 원본 행은 저장소와 문서에 노출하지 않는다.
-
-## 주요 설계 결정과 메서드 책임
-
-코호트 준비 과정은 여러 개의 작은 함수로 나누고, prepare_cohort가 정해진 순서대로 실행하도록 만들었다. 기존 사용법과 검증 방식은 유지하면서 각 단계를 이해하고 테스트하기 쉽게 했다. 별도의 상태 관리 클래스는 지금 필요하지 않아 사용하지 않았다.
-
-`DataAnalyzer`는 `load_data()`로 자료형을 검증해 불러오고, `handle_missing()`으로 그룹별·전체값 순서로 수치 결측을 대치한다. `engineer_features()`는 이미지 평균·표준편차와 상품명 길이를 만들며, `detect_outliers()`는 IQR 경계를 계산하고, `calculate_rfm()`은 최근성·빈도·Monetary 점수와 세그먼트를 산출한다.
-
-## 재현 워크플로
-
-대회 조건을 수락한 뒤 로컬에만 내려받는다.
-
-```bash
-kaggle competitions download -c h-and-m-personalized-fashion-recommendations -p data/raw/h-and-m
-unzip data/raw/h-and-m/h-and-m-personalized-fashion-recommendations.zip -d data/raw/h-and-m
-```
+원본을 `data/raw/h-and-m`에 둔다.
 
 ```text
-data/
-├── raw/h-and-m/{articles.csv,customers.csv,transactions_train.csv,images/}
-└── processed/{hm_customer_cohort.csv,hm_customer_cohort.summary.json}
+data/raw/h-and-m/
+├── articles.csv
+├── customers.csv
+├── transactions_train.csv
+└── images/
 ```
-
-코호트를 만들고 노트북을 재생성·검증한 다음 테스트한다. `data/raw/`, `data/processed/`, 이미지와 `kaggle.json`은 추적하지 않는다.
 
 ```bash
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
-.venv/bin/python scripts/prepare_hm_data.py \
-  --raw-dir data/raw/h-and-m --output data/processed/hm_customer_cohort.csv
-HM_RAW_DATA_DIR=data/raw/h-and-m .venv/bin/python scripts/build_notebook.py
-MPLCONFIGDIR=/tmp/hm-matplotlib-cache HM_RAW_DATA_DIR=data/raw/h-and-m \
-  .venv/bin/jupyter nbconvert --to notebook --execute --inplace \
-  notebooks/analysis_report.ipynb --ExecutePreprocessor.timeout=600
-.venv/bin/python scripts/verify_notebook.py notebooks/analysis_report.ipynb
-.venv/bin/python -m unittest discover -s tests -v
+.venv/bin/python scripts/build_notebook.py
+HM_RAW_DATA_DIR=data/raw/h-and-m .venv/bin/jupyter notebook notebooks/analysis_report.ipynb
 ```
 
-## 분석 방법과 범위
+다른 위치라면 `HM_RAW_DATA_DIR=/external/path`를 설정한다. 결과 cache는 기본 `data/runtime/` 또는 `HM_RUNTIME_DIR`에 생성되며 Git에서 무시된다.
 
-전체 9,351개 거래에는 Pandas 문자열 연산으로 상품명 길이를 계산한다. 나이는 회원 상태 **그룹별** 중앙값으로 먼저 채우고, 해당 그룹에 값이 없을 때만 전체 중앙값으로 보완한다. 가격은 IQR 1.5배 울타리 밖을 표시하되 원본을 삭제하지 않고 비교용 복사본만 필터링한다. RFM의 Frequency는 행 수가 아니라 **고유 구매일** 수라서 주문 식별자가 없는 원천에서 같은 날의 여러 행을 과대계수하지 않는다.
+## Kaggle 실데이터 검증
 
-전처리에서 원본 shape가 `(1750, 1166, 3)`인 거래만 남긴 뒤, 이미지는 결정적으로 선택한 64개 상품에만 Matplotlib로 읽고 NumPy 슬라이싱(`::35`) 뒤 `np.stack`으로 묶어 Mean/Std를 축 방향으로 계산한다. 이 상품별 특징을 해당 상품이 등장한 **81개 거래 행에 다시 결합**하므로 이미지 요약과 상관계수는 64개 상품을 동일 가중한 값이 아니라 **거래 가중(transaction-weighted)** 통계다. 원본 shape 검증으로 축소 후 텐서는 모두 `(50, 34, 3)`이며 서로 다른 축소 형상은 계속 엄격히 거부한다. 표본은 이미지 I/O와 대형 텐서의 메모리 비용을 제한하기 위한 것이며, 전체 거래·텍스트·IQR·RFM은 shape 필터 후 전체 범위를 사용한다. 슬라이싱 뷰가 큰 디코딩 배열을 붙잡지 않도록 compact-copy로 **연속 메모리**를 만든 뒤 적층한다. JPEG를 하나씩 읽는 I/O와 텐서 적층은 여전히 주요 **병목**이다.
+1. Kaggle에서 H&M competition 데이터셋을 Notebook Input으로 추가한다.
+2. 이 저장소를 Kaggle Notebook 작업 디렉터리(`/kaggle/working/customer-value-segmentation-pipeline`)에 업로드/clone한다. 인터넷이 꺼져 있으면 저장소 자체를 Kaggle Dataset Input으로 첨부한 뒤 해당 경로를 이 위치에 복사하고 `PROJECT_ROOT`를 설정한다.
+3. `notebooks/analysis_report.ipynb`를 열고 **Run All** 한다. Kaggle 입력 경로를 자동 탐색하고 `/kaggle/working/hm-customer-value`에 runtime CSV를 만든다.
+4. 마지막 `Final execution summary`, 여섯 차트, `image_mean`/`image_std` 컬럼, RFM 표가 모두 생성됐는지 확인한다.
+5. **Save Version**으로 실행 결과를 보존한다. 그 결과의 실제 수치를 아래 인사이트 템플릿에 반영해 README를 갱신한다.
 
-## 집계 근거
+실데이터를 이 저장소 환경에서 실행하거나 수치를 미리 주장하지 않는다.
 
-아래 값은 원본 shape 필터 후 전체 9,351개 거래·6,538개 상품을 대상으로 한 표/텍스트/IQR/RFM과, 무작위 상태 42로 결정적으로 고른 64개 상품 이미지 표본을 분리해 계산했다. 이미지 특징은 81개 거래 행에 다시 결합되어 이미지 요약과 상관계수가 거래 가중된다. 전체 분석 프레임의 형상은 **(9,351, 12)**이며, 기간은 2018-09-20부터 2020-09-22까지다. 나이 결측은 대치 전 72건이고 IQR 밖은 478건이며 경계는 -0.0104와 0.0605이다.
+## Missing Value Handling: Age Imputation Strategy
 
-| RFM 세그먼트 | 고객 수 | 평균 최근성 | 평균 고유 구매일 수 | 평균 상대 Monetary | Monetary 비중 |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| Churned | 180 | 453.8556 | 1.2833 | 0.1083 | 0.0748 |
-| Loyal | 88 | 281.2727 | 4.9318 | 0.3924 | 0.1325 |
-| New | 20 | 30.8500 | 1.3500 | 0.1240 | 0.0095 |
-| Potential | 49 | 118.5714 | 1.3878 | 0.1250 | 0.0235 |
-| VIP | 161 | 56.5217 | 12.8075 | 1.2294 | 0.7596 |
+`customers.csv`의 고객 연령(`age`)에는 결측값이 존재한다.  
+전체 1,371,980명의 고객 중 15,861명의 연령이 결측이었으며, 결측률은 약 **1.156%**였다.
 
-다음 상관행렬은 결정적으로 선택한 **64개 상품 이미지 표본**의 특징을 **81개 거래 행**에 다시 결합해 계산했다. 따라서 이미지 관련 계수는 전체 코호트 이미지 추정치가 아니라 표본 범위의 거래 가중 기술값이다.
+단순히 결측 행을 삭제하면 해당 고객의 거래 정보까지 분석 대상에서 제외될 수 있으므로, 본 프로젝트에서는 고객을 삭제하지 않고 **그룹별 통계량을 이용한 대치(Group-wise Imputation)** 방식을 사용하였다.
 
-|  | 상대 가격 | 나이 | 이미지 평균 | 이미지 표준편차 | 상품명 길이 |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| 상대 가격 | 1.0000 | -0.1129 | -0.3082 | 0.2479 | 0.1280 |
-| 나이 | -0.1129 | 1.0000 | 0.1136 | -0.1878 | 0.0753 |
-| 이미지 평균 | -0.3082 | 0.1136 | 1.0000 | -0.9410 | -0.1484 |
-| 이미지 표준편차 | 0.2479 | -0.1878 | -0.9410 | 1.0000 | 0.1636 |
-| 상품명 길이 | 0.1280 | 0.0753 | -0.1484 | 0.1636 | 1.0000 |
+### 1. 그룹 변수 선택
 
-이미지 평균과 상품명 길이는 -0.1484로 약한 음의 선형 신호이고, 상대 가격과 이미지 평균은 -0.3082로 중간 정도의 음의 선형 신호다. 두 값 모두 관찰적·결정적 64개 상품 표본 범위의 해석일 뿐 인과관계를 뜻하지 않는다.
+연령 대치에 사용할 그룹 변수를 선택하기 위해 다음 후보를 비교하였다.
 
-## 비즈니스 인사이트
+| Candidate | Missing Rate |
+|---|---:|
+| `club_member_status` | **0.442%** |
+| `fashion_news_frequency` | 1.167% |
+| `FN` | 65.238% |
+| `Active` | 66.151% |
 
-1. VIP는 161명(32.3%)이지만 Monetary의 0.7596을 차지하고 평균 고유 구매일 수는 12.8075다. 대상은 VIP이며, 최근 구매 문맥을 이용한 재입고·연관 제안을 적용해 재방문 방향의 변화를 본다. 무작위 A/B 홀드아웃에서 재방문률과 상대 Monetary가 대조군보다 오르지 않으면 이 제안의 가설을 **반증**한다.
-2. Churned는 180명(36.1%)으로 가장 크고 평균 최근성은 453.8556일, 평균 고유 구매일 수는 1.2833이다. 대상은 Churned이며, 일괄 할인 대신 동의 기반 재접촉의 타이밍·메시지를 실험해 복귀 방향을 측정한다. A/B 홀드아웃에서 90일 복귀율이 개선되지 않거나 접촉 피로 지표가 악화되면 중단한다.
-3. Loyal은 88명으로 Monetary 비중 0.1325, 평균 고유 구매일 수 4.9318을 보인다. 대상은 Loyal이며, VIP 전환용 혜택을 소규모로 시험해 다음 구매일과 상대 Monetary의 상승 방향을 본다. 추가로 필요한 데이터는 노출·쿠폰·재고·반품 정보이며, 이를 보정한 대조 분석 또는 A/B에서 차이가 사라지면 전환 가설을 반증한다.
+`FN`과 `Active`는 값 자체가 65% 이상 결측이므로 연령 대치 기준으로 사용하기 어렵다고 판단하였다.
 
-## 한계와 다음 단계
+따라서 비교 가능한 후보를 다음 두 변수로 좁혔다.
 
-IQR은 비대칭 가격 분포에서 유효한 정상값도 이상치로 표시할 수 있고, 그룹별 대치는 나이의 분산을 축소한다. 500명 결정 표본은 모집단을 대표한다고 보장하지 않으며, 원본 shape 필터가 비표준 이미지 상품을 체계적으로 제외한다. 이미지 통계는 64개 상품을 81개 거래 행에 다시 결합한 거래 가중 표본이라 자주 구매된 상품의 영향이 더 크고 색상·형태의 의미도 모두 담지 않는다. 가격은 정규화된 상대값이고 주문 ID가 없어 같은 날 주문을 완전히 구분할 수 없다. 인과 효과는 관찰 분석만으로 결론낼 수 없다.
+- `club_member_status`
+- `fashion_news_frequency`
 
-다음 단계는 90일 **이탈**을 목표 변수로 정의하고, 최근성·고유 구매일 빈도·상대 Monetary·회원 상태·채널·카테고리·이미지/텍스트 특징과 함께 노출·재고·반품·동의 기반 마케팅 이력을 추가로 필요한 데이터로 받아 시간 분할 검증하는 것이다.
+실제 연령 분포를 확인한 결과 `club_member_status`에서는 주요 그룹 간 연령 중앙값 차이가 나타났다.
 
-## 추가 링크
+| `club_member_status` | Customers with Known Age | Mean Age | Median Age |
+|---|---:|---:|---:|
+| ACTIVE | 1,266,255 | 36.08 | 31 |
+| PRE-CREATE | 85,624 | 40.89 | 41 |
+| LEFT CLUB | 464 | 33.99 | 29 |
 
-- [#1 — 데이터 로드·결측치 처리 API](./src/pipeline.py#L45-L87)
-- [#2 — 실행 노트북](./notebooks/analysis_report.ipynb) · [검증 로그](./artifacts/notebook_execution.log)
-- [#3 — 데이터 크기·자료형 실행 결과](./notebooks/analysis_report.ipynb)
-- [#4 — 이미지·텍스트 파생변수 구현](./src/pipeline.py#L89-L127) · [실행 범위 출력](./notebooks/analysis_report.ipynb)
-- [#5 — IQR 탐지 구현](./src/pipeline.py#L129-L146) · [처리 전후 박스플롯](./notebooks/analysis_report.ipynb)
-- [#6 — 차트 생성 코드](./scripts/build_notebook.py#L203-L283) · [실행된 차트](./notebooks/analysis_report.ipynb)
-- [#7 — 기술통계·상관계수 계산](./scripts/build_notebook.py#L156-L200) · [Markdown 해석](./notebooks/analysis_report.ipynb)
-- [#8 — RFM 세그먼트 구현](./src/pipeline.py#L148-L222) · [세그먼트 실행 결과](./notebooks/analysis_report.ipynb)
-- [#9 — 메서드 구현](./src/pipeline.py#L39-L222) · [메서드 책임 요약](#주요-설계-결정과-메서드-책임)
-- [#10 — NumPy 벡터 연산](./src/pipeline.py#L102-L118)
-- [#11 — 분석 파라미터](./src/pipeline.py#L11-L34) · [준비 파라미터](./scripts/constants.py#L28-L44)
-- [#12 — 단계별 준비 구현](./scripts/prepare_hm_data.py#L95-L130) · [선택 근거 요약](#주요-설계-결정과-메서드-책임)
-- [#13 — IQR 효과와 한계](#한계와-다음-단계)
-- [#14 — 그룹별 결측치 대치 방식](#분석-방법과-범위)
-- [#15 — RFM 4분위 점수 구현](./src/pipeline.py#L181-L214)
-- [#16 — 연속 메모리·벡터화 근거](#분석-방법과-범위)
-- [#17 — 이미지 I/O 병목 설명](#분석-방법과-범위)
-- [#18 — 비즈니스 액션·검증 기준](#비즈니스-인사이트)
-- [#19 — 이탈 모델링 확장안](#한계와-다음-단계)
+특히 `ACTIVE`와 `PRE-CREATE` 그룹의 중앙값은 각각 **31세와 41세로 10세 차이**가 있었다.
+
+반면 `fashion_news_frequency`의 주요 그룹인 `NONE`과 `Regularly`의 중앙값은 각각 31세와 32세로 차이가 상대적으로 작았다.
+
+### 2. Hold-out Validation
+
+그룹 선택을 임의로 결정하지 않기 위해 실제 연령이 존재하는 고객 중 일부를 검증 데이터로 분리한 뒤, 연령을 모르는 상황을 가정하여 대치값과 실제 연령의 차이를 비교하였다.
+
+평가 지표로는 다음과 같은 MAE(Mean Absolute Error)를 사용하였다.
+
+> MAE는 대치된 연령과 실제 연령이 평균적으로 몇 세 차이가 나는지를 나타낸다. 값이 작을수록 실제 연령에 더 가까운 대치 결과를 의미한다.
+
+동일한 고객 집단과 동일한 train/test split을 사용한 비교 결과는 다음과 같다.
+
+| Imputation Method | MAE | Improvement vs. Global Median |
+|---|---:|---:|
+| Global median | 12.0754 | - |
+| `club_member_status` median | **11.9726** | **0.8519%** |
+| `fashion_news_frequency` median | 12.0632 | 0.1016% |
+| `club_member_status + fashion_news_frequency` median | **11.9565** | **0.9847%** |
+
+두 변수를 결합한 방법이 가장 낮은 MAE를 보였지만, `club_member_status` 단독과의 차이는 약 **0.0161세**에 불과했다.
+
+또한 실제 `age` 결측 고객에게 그룹 정보를 적용할 수 있는 비율은 다음과 같았다.
+
+| Method | Coverage among Missing-Age Customers |
+|---|---:|
+| `club_member_status` | **85.59%** |
+| `fashion_news_frequency` | 86.04% |
+| `club_member_status + fashion_news_frequency` | 84.32% |
+
+두 변수를 조합할 경우 두 컬럼이 모두 존재해야 하므로 coverage가 감소하고 그룹 수가 증가하여 작은 표본의 그룹이 더 많이 생성된다.
+
+따라서 아주 작은 MAE 개선을 위해 복잡성과 coverage를 희생하기보다, **성능·적용 범위·설명 가능성의 균형이 좋은 `club_member_status`를 최종 그룹 변수로 선택하였다.**
+
+### 3. Mean vs. Median
+
+그룹 내부의 결측값을 평균(mean)과 중앙값(median) 중 어떤 값으로 대치할지도 데이터 기반으로 비교하였다.
+
+가장 큰 고객 그룹인 `ACTIVE`의 연령 분포는 다음과 같았다.
+
+- Mean: **36.08**
+- Median: **31**
+- Skewness: **+0.643**
+- Mean–Median Gap: **5.08 years**
+
+양의 skewness와 평균-중앙값 차이는 해당 연령 분포가 완전히 대칭적이지 않고 오른쪽 꼬리를 가진다는 것을 보여준다.
+
+동일한 hold-out 데이터에서 그룹 평균과 그룹 중앙값 대치를 비교한 결과:
+
+| Strategy | MAE | RMSE |
+|---|---:|---:|
+| Group Mean | 12.3962 | **14.2468** |
+| Group Median | **11.9476** | 15.0651 |
+
+중앙값 대치의 MAE는 평균 대치보다 약 **3.62% 낮았다**.
+
+RMSE에서는 평균이 더 낮았는데, 이는 평균이 제곱오차를 최소화하는 대표값이라는 통계적 특성과 일치한다. 반면 중앙값은 절대오차에 더 강건하며, MAE를 최소화하는 대표값이다.
+
+본 프로젝트의 목적은 연령을 정밀하게 예측하는 모델을 구축하는 것이 아니라, EDA와 고객 세분화를 계속 수행하기 위해 **결측 고객에게 해당 그룹의 전형적인 연령값을 안정적으로 대입하는 것**이다.
+
+따라서 다음 이유로 중앙값을 선택하였다.
+
+1. 주요 그룹의 연령 분포가 완전히 대칭적이지 않았다.
+2. 중앙값은 극단적인 관측값의 영향을 평균보다 적게 받는다.
+3. 동일한 hold-out 검증에서 중앙값의 MAE가 더 낮았다.
+4. 결측 대치의 목적상 평균적인 절대 복원 오차를 해석하기 쉬운 MAE를 주요 기준으로 사용하였다.
+
+### 4. Final Imputation Policy
+
+최종 연령 결측치 처리 정책은 다음과 같다.
+
+1. `age`가 존재하면 원래 값을 유지한다.
+2. `age`가 결측이고 `club_member_status`에 충분한 표본이 존재하면 해당 그룹의 **median age**를 사용한다.
+3. 그룹의 표본 수가 설정된 최소 기준보다 작으면 그룹 통계량을 사용하지 않는다.
+4. `club_member_status`가 결측이거나 그룹 표본이 부족하면 전체 고객의 **global median age**를 fallback으로 사용한다.
+5. 결측 고객 자체를 삭제하지 않는다.
+
+예를 들어 검증 데이터 기준으로 충분한 표본이 존재한 그룹은 다음과 같았다.
+
+| Group | Training Count | Median Age | Policy |
+|---|---:|---:|---|
+| ACTIVE | 1,012,976 | 31 | Group median |
+| PRE-CREATE | 68,525 | 41 | Group median |
+| LEFT CLUB | 373 | 29 | Global median fallback |
+
+`LEFT CLUB`은 표본 수가 적어 그룹 중앙값의 안정성이 낮다고 판단하여 global median을 사용한다.
+
+### 5. Limitations
+
+그룹별 중앙값 대치는 실제 연령을 복원하는 모델이 아니라 대표값을 삽입하는 전처리 방법이다.
+
+따라서 다음과 같은 한계가 있다.
+
+- 동일 그룹의 여러 결측 고객에게 같은 값이 입력되므로 연령 분산이 감소할 수 있다.
+- `club_member_status`가 연령을 강하게 예측하는 변수라고 해석해서는 안 된다. Hold-out MAE 개선 폭은 약 0.85%로 크지 않았다.
+- 그룹 간 연령 차이가 실제 고객 행동 차이와 직접적인 인과관계를 의미하지 않는다.
+- 더 정확한 연령 복원이 필요하다면 추가 고객 특성이나 별도의 예측 모델이 필요하지만, 이는 현재 EDA/RFM 미션의 범위를 벗어난다.
+
+따라서 본 프로젝트에서는 **결측 행을 삭제하지 않으면서 데이터의 그룹 구조를 일부 반영하고, 단순성과 재현성을 유지하기 위한 보수적인 전처리 방법**으로 `club_member_status` 기반 그룹 중앙값 대치를 사용하였다.
+
+## 비즈니스 인사이트 (Kaggle Run All 후 확정)
+
+아래는 의도적으로 수치가 비어 있는 제출 전 템플릿이다. Kaggle 전체 실행 결과를 복사해 확정한다.
+
+1. **VIP 유지:** 근거(실제 고객 비중·Monetary 비중)를 기록하고 조기 접근/재입고 알림을 A/B 테스트한다. 대조군 대비 재방문·상대 Monetary 상승이 없으면 가설을 기각한다.
+2. **Churned 재활성화:** 근거(실제 최근성·고객 수)를 기록하고 동의 기반 메시지의 시점/내용을 A/B 테스트한다. 90일 복귀율이 개선되지 않거나 피로 지표가 악화되면 중단한다.
+3. **Loyal의 VIP 전환:** 근거(실제 빈도·Monetary)를 기록하고 혜택을 제한적으로 실험한다. 노출·재고·반품 데이터가 없으므로 인과 검증에는 실험 로그가 추가로 필요하다.
+
+## 한계
+
+단순 이미지 밝기/표준편차와 상품명 길이는 의미론적 이미지 모델이 아니다. 상관관계는 인과관계가 아니다. 전체 거래가 크므로 주요 병목은 CSV I/O와 이미지 디코딩이며, RFM은 고객 hash partition, 가격 IQR은 디스크 기반 NumPy 배열로 메모리 사용을 제한한다.
