@@ -7,3 +7,4 @@ __pycache__/
 kaggle.json
 data/raw/
 data/processed/
+data/runtime/
