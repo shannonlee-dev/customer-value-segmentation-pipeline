@@ -136,14 +136,10 @@ class DataAnalyzer:
         self.customers = customers.rename(columns={CUSTOMER_AGE_COLUMN: AGE_RAW_COLUMN})
         self.handle_missing_values(AGE_RAW_COLUMN, CUSTOMER_MEMBERSHIP_COLUMN)
         self.customers.to_csv(self.customers_path, index=False)
-        self.articles = articles.rename(columns=ARTICLE_RENAMES)
-        self.articles[PRODUCT_NAME_LENGTH_COLUMN] = self.articles[PRODUCT_NAME_COLUMN].astype(STRING_DTYPE).str.len()
-        self.articles[IMAGE_PATH_COLUMN] = self.articles[PRODUCT_ID_COLUMN].map(
-            lambda value: f"{IMAGE_DIRECTORY}/{value[:3]}/{value}{IMAGE_FILE_EXTENSION}"
-        )
-        self.articles.to_csv(self.articles_path, index=False)
 
         total_rows, first_chunk = 0, True
+        selected_customer_ids = set(self.customers[CUSTOMER_ID_COLUMN].tolist())
+        selected_product_ids: set[str] = set()
         for chunk in pd.read_csv(
             raw / RAW_TRANSACTIONS_FILENAME,
             usecols=RAW_TRANSACTION_COLUMNS,
@@ -157,17 +153,31 @@ class DataAnalyzer:
                 raise ValueError("transactions_train.csv references an unknown customer")
             if not chunk[RAW_ARTICLE_ID_COLUMN].isin(articles[RAW_ARTICLE_ID_COLUMN]).all():
                 raise ValueError("transactions_train.csv references an unknown article")
-            frame = chunk.rename(columns=TRANSACTION_RENAMES)
+            frame = chunk.loc[chunk[CUSTOMER_ID_COLUMN].isin(selected_customer_ids)].rename(columns=TRANSACTION_RENAMES)
+            selected_product_ids.update(frame[PRODUCT_ID_COLUMN].dropna().tolist())
             frame[ORDER_DATE_COLUMN] = pd.to_datetime(frame[ORDER_DATE_COLUMN], errors=STRICT_PARSING_ERRORS)
             frame[UNIT_PRICE_COLUMN] = pd.to_numeric(frame[UNIT_PRICE_COLUMN], errors=STRICT_PARSING_ERRORS)
-            frame.to_csv(
+            if not frame.empty:
+                frame.to_csv(
+                    self.transactions_path,
+                    mode=CSV_WRITE_MODE if first_chunk else CSV_APPEND_MODE,
+                    header=first_chunk,
+                    index=False,
+                )
+                first_chunk = False
+            total_rows += len(frame)
+        if first_chunk:
+            pd.DataFrame(columns=[ORDER_DATE_COLUMN, CUSTOMER_ID_COLUMN, PRODUCT_ID_COLUMN, UNIT_PRICE_COLUMN, SALES_CHANNEL_COLUMN]).to_csv(
                 self.transactions_path,
-                mode=CSV_WRITE_MODE if first_chunk else CSV_APPEND_MODE,
-                header=first_chunk,
                 index=False,
             )
-            first_chunk = False
-            total_rows += len(frame)
+        self.articles = articles.rename(columns=ARTICLE_RENAMES)
+        self.articles[PRODUCT_NAME_LENGTH_COLUMN] = self.articles[PRODUCT_NAME_COLUMN].astype(STRING_DTYPE).str.len()
+        self.articles[IMAGE_PATH_COLUMN] = self.articles[PRODUCT_ID_COLUMN].map(
+            lambda value: f"{IMAGE_DIRECTORY}/{value[:3]}/{value}{IMAGE_FILE_EXTENSION}"
+        )
+        self.articles = self.articles.loc[self.articles[PRODUCT_ID_COLUMN].isin(selected_product_ids)].copy()
+        self.articles.to_csv(self.articles_path, index=False)
         return {
             "source_customer_rows": source_customer_rows,
             "transaction_rows": total_rows,

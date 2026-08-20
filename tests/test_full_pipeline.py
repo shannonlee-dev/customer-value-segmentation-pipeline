@@ -54,6 +54,22 @@ class FullPipelineTests(unittest.TestCase):
         self.assertEqual(first_customers["club_member_status"].value_counts().to_dict(), {"ACTIVE": 2, "PRE-CREATE": 1})
         self.assertEqual(first_customers["customer_id"].tolist(), second_customers["customer_id"].tolist())
 
+    def test_sampled_customers_keep_all_transactions_and_only_used_products(self):
+        analyzer = self.analyzer(customer_sample_size=2, sampling_seed=3)
+        summary = analyzer.load_data()
+        selected_customers = set(pd.read_csv(analyzer.customers_path, dtype={"customer_id": "string"})["customer_id"])
+        source_transactions = pd.read_csv(self.raw / "transactions_train.csv", dtype={"customer_id": "string"})
+        expected_transactions = source_transactions.loc[source_transactions["customer_id"].isin(selected_customers)]
+        cached_transactions = pd.read_csv(analyzer.transactions_path, dtype={"customer_id": "string", "product_id": "string"})
+        cached_articles = pd.read_csv(analyzer.articles_path, dtype={"product_id": "string"})
+
+        self.assertEqual(summary["source_customer_rows"], 4)
+        self.assertEqual(len(cached_transactions), len(expected_transactions))
+        self.assertEqual(set(cached_transactions["customer_id"]), selected_customers)
+        self.assertEqual(set(cached_articles["product_id"]), set(cached_transactions["product_id"]))
+        image_features = analyzer.engineer_features()
+        self.assertEqual(set(image_features["product_id"].astype("string")), set(cached_transactions["product_id"]))
+
     def test_loads_every_transaction_and_imputes_customer_age(self):
         analyzer = self.analyzer()
         summary = analyzer.load_data()
