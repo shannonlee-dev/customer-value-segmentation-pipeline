@@ -8,6 +8,22 @@ from nbformat.v4 import new_code_cell, new_markdown_cell, new_notebook
 
 def build_notebook(path: Path = Path("notebooks/analysis_report.ipynb")) -> Path:
     cells = [
+        new_code_cell("""import os
+from pathlib import Path
+
+BASE = Path("/kaggle/input/notebooks/classichit/codyssey-a-1-1")
+
+candidates = list(BASE.rglob("src/pipeline.py"))
+
+print("찾은 pipeline.py:", candidates)
+
+if not candidates:
+    raise RuntimeError("src/pipeline.py를 찾지 못했습니다.")
+
+PROJECT_ROOT = candidates[0].parent.parent
+os.environ["PROJECT_ROOT"] = str(PROJECT_ROOT)
+
+print("PROJECT_ROOT =", PROJECT_ROOT)"""),
         new_markdown_cell("""# H&M Customer Value Analysis
 
 Open this notebook and select **Run All**. It discovers a writable runtime cache, `HM_PRECOMPUTED_DIR`, the attached Kaggle full-data artifact, Kaggle competition input, `data/raw/h-and-m`, or `HM_RAW_DATA_DIR` automatically. Every metric uses the full available dataset; no customer, transaction, product, or image analysis sampling is used.
