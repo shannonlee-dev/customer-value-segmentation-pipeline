@@ -199,6 +199,14 @@ correlation_interpretations = "\\n".join([
 )
 display(Markdown(correlation_interpretations))"""
         ),
+        new_markdown_cell(
+            """### Correlation interpretation
+
+- **Relative price and age:** `r = +0.032`; negligible positive association. The squared magnitude is 0.10%, so this provides little standalone linear signal.
+- **Image Mean and product-name length:** `r = -0.148`; weak negative association. The squared magnitude is 2.20%, so this provides limited standalone linear signal.
+
+These observational correlations do not imply causation. Image-feature results cover 64 deterministic sampled products joined back to 81 transaction rows and are transaction-weighted."""
+        ),
         new_code_cell(
             """# 1. Histogram
 plt.figure(figsize=(8, 4))

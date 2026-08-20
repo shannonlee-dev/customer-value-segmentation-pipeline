@@ -1,6 +1,6 @@
 notebook: notebooks/analysis_report.ipynb
-notebook_sha256: 24ec144ae50cb2c7f56011289cb80a1a90ea607437e2add9b2659fe6393d9831
-cell_count: 11
+notebook_sha256: 7a975bdc12e0f6a9928a771845312a6f05c6f291888ec27d7f3d25edffac2ccb
+cell_count: 12
 code_cell_count: 10
 output_count: 19
 chart_count: 7

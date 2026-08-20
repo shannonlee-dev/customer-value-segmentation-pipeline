@@ -44,7 +44,7 @@ class ExecutedNotebookContractTests(unittest.TestCase):
 
     def test_notebook_has_the_required_order_and_analysis_operations(self):
         """Removing or reordering an analysis stage breaks the report contract."""
-        self.assertEqual(len(self.notebook.cells), 11)
+        self.assertEqual(len(self.notebook.cells), 12)
         sources = [cell.source for cell in self.notebook.cells]
         stage_tokens = [
             ("H&M", "non-commercial"),
@@ -55,6 +55,7 @@ class ExecutedNotebookContractTests(unittest.TestCase):
             ("engineer_features", "product_name_length"),
             ("IQR", "boxplot"),
             ("correlation", "describe"),
+            ("Correlation interpretation", "r = +0.032", "r = -0.148", "observational"),
             ("histplot", "countplot", "heatmap", "scatterplot", "lineplot"),
             ("calculate_rfm", "segment"),
             ("Markdown", "limitations"),
@@ -154,6 +155,24 @@ class ExecutedNotebookContractTests(unittest.TestCase):
         self.assertEqual(markdown.count("standalone linear signal"), 2)
         self.assertIn("observational", markdown)
 
+    def test_correlation_interpretation_is_committed_as_a_markdown_cell(self):
+        """Static Markdown keeps the interpretation visible to source-only reviewers."""
+        correlation_markdown = [
+            cell.source
+            for cell in self.notebook.cells
+            if cell.cell_type == "markdown" and "Correlation interpretation" in cell.source
+        ]
+        self.assertEqual(len(correlation_markdown), 1)
+        markdown = correlation_markdown[0]
+        for token in (
+            "r = +0.032",
+            "r = -0.148",
+            "negligible positive association",
+            "weak negative association",
+            "observational",
+        ):
+            self.assertIn(token, markdown)
+
     def test_text_length_covers_full_cohort_while_images_stay_sampled(self):
         """Text length must cover every loaded row even when image decoding is sampled."""
         setup_outputs = textual_outputs(new_notebook(cells=[self.notebook.cells[1]]))
@@ -195,7 +214,7 @@ class ExecutedNotebookContractTests(unittest.TestCase):
 
     def test_image_interpretations_state_the_transaction_weighted_join_back_scope(self):
         """Image summaries must not read like unweighted 64-product statistics."""
-        for cell_index in (7, 10):
+        for cell_index in (7, 11):
             rendered_markdown = "\n".join(
                 output.get("data", {}).get("text/markdown", "")
                 for output in self.notebook.cells[cell_index].get("outputs", [])
@@ -236,7 +255,7 @@ class NotebookVerifierTests(unittest.TestCase):
     def test_inspection_summarizes_the_real_executed_notebook(self):
         """A valid report produces auditable counts and a PASS status."""
         summary = self.inspect_notebook(NOTEBOOK_PATH)
-        self.assertEqual(summary["cell_count"], 11)
+        self.assertEqual(summary["cell_count"], 12)
         self.assertGreaterEqual(summary["chart_count"], 6)
         self.assertEqual(summary["error_count"], 0)
         self.assertEqual(summary["redaction_status"], "PASS")
