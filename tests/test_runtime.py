@@ -88,6 +88,23 @@ class RuntimeDiscoveryTests(unittest.TestCase):
             self.assertNotEqual(context.runtime_root, precomputed)
             self.assertTrue(context.runtime_root.is_dir())
 
+    def test_precomputed_root_allows_run_all_without_raw_data_attachment(self):
+        from src.runtime import discover_runtime
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            precomputed = root / "precomputed"
+            precomputed.mkdir()
+
+            context = discover_runtime(
+                project_root=root,
+                environ={"HM_PRECOMPUTED_DIR": str(precomputed)},
+                kaggle_root=root / "missing-kaggle",
+            )
+
+        self.assertEqual(context.precomputed_root, precomputed)
+        self.assertIsNone(context.raw_data_root)
+
     def test_missing_dataset_has_actionable_error(self):
         from src.runtime import discover_runtime
 

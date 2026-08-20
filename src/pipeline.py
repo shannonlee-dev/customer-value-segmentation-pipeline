@@ -1,5 +1,8 @@
 """Portable, full-data H&M analysis implemented with Pandas, NumPy, and Matplotlib."""
 
+import json
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
 from matplotlib import image as mpimg
@@ -19,6 +22,7 @@ CUSTOMERS_CACHE_FILENAME = "customers.csv"
 ARTICLES_CACHE_FILENAME = "articles.csv"
 IMAGE_FEATURES_CACHE_FILENAME = "product_images.csv"
 RFM_OUTPUT_FILENAME = "rfm.csv"
+IQR_OUTPUT_FILENAME = "iqr_{column}.json"
 RFM_PARTITIONS_DIRECTORY = "rfm_partitions"
 RFM_PARTITION_FILENAME = "part_{index:02d}.csv"
 
@@ -96,6 +100,22 @@ RFM_SEGMENT_NEW = "New"
 RFM_SEGMENT_CHURNED = "Churned"
 RFM_SEGMENT_POTENTIAL = "Potential"
 
+# Reusable artifact schema contracts
+TRANSACTION_REQUIRED_COLUMNS = (CUSTOMER_ID_COLUMN, PRODUCT_ID_COLUMN, ORDER_DATE_COLUMN, UNIT_PRICE_COLUMN, SALES_CHANNEL_COLUMN)
+CUSTOMER_NORMALIZED_REQUIRED_COLUMNS = (CUSTOMER_ID_COLUMN, CUSTOMER_AGE_COLUMN, CUSTOMER_MEMBERSHIP_COLUMN, FASHION_NEWS_COLUMN)
+ARTICLE_NORMALIZED_REQUIRED_COLUMNS = (PRODUCT_ID_COLUMN, PRODUCT_NAME_COLUMN, CATEGORY_COLUMN, PRODUCT_NAME_LENGTH_COLUMN, IMAGE_PATH_COLUMN)
+IMAGE_FEATURE_REQUIRED_COLUMNS = (PRODUCT_ID_COLUMN, IMAGE_PATH_COLUMN, IMAGE_STATUS_COLUMN, IMAGE_MEAN_COLUMN, IMAGE_STD_COLUMN)
+RFM_REQUIRED_COLUMNS = (
+    CUSTOMER_ID_COLUMN,
+    RFM_RECENCY_COLUMN,
+    RFM_FREQUENCY_COLUMN,
+    RFM_MONETARY_COLUMN,
+    RFM_RECENCY_SCORE_COLUMN,
+    RFM_FREQUENCY_SCORE_COLUMN,
+    RFM_MONETARY_SCORE_COLUMN,
+    RFM_SEGMENT_COLUMN,
+)
+
 
 class DataAnalyzer:
     """Public facade for loading, cleaning, feature engineering, IQR, and RFM."""
@@ -103,32 +123,75 @@ class DataAnalyzer:
     def __init__(self, context: RuntimeContext, chunksize: int = DEFAULT_CHUNKSIZE):
         self.context = context
         self.chunksize = chunksize
-        self.transactions_path = context.processed_root / TRANSACTIONS_CACHE_FILENAME
-        self.customers_path = context.processed_root / CUSTOMERS_CACHE_FILENAME
-        self.articles_path = context.processed_root / ARTICLES_CACHE_FILENAME
-        self.images_path = context.feature_root / IMAGE_FEATURES_CACHE_FILENAME
+        self.runtime_transactions_path = context.processed_root / TRANSACTIONS_CACHE_FILENAME
+        self.runtime_customers_path = context.processed_root / CUSTOMERS_CACHE_FILENAME
+        self.runtime_articles_path = context.processed_root / ARTICLES_CACHE_FILENAME
+        self.runtime_images_path = context.feature_root / IMAGE_FEATURES_CACHE_FILENAME
+        self.runtime_rfm_path = context.aggregate_root / RFM_OUTPUT_FILENAME
+        self.transactions_path = self.runtime_transactions_path
+        self.customers_path = self.runtime_customers_path
+        self.articles_path = self.runtime_articles_path
+        self.images_path = self.runtime_images_path
+        self.rfm_path = self.runtime_rfm_path
         self.customers: pd.DataFrame | None = None
         self.articles: pd.DataFrame | None = None
+        self.artifact_status: dict[str, str] = {}
+        self.cache_messages: list[str] = []
 
-    def load_data(self) -> dict[str, int]:
+    def load_data(self, *, force: bool = False) -> dict[str, int]:
         """Cache every source row as normalized CSV files; never sample analysis data."""
         raw = self.context.raw_data_root
-        customers = pd.read_csv(raw / RAW_CUSTOMERS_FILENAME, dtype={CUSTOMER_ID_COLUMN: STRING_DTYPE})
-        articles = pd.read_csv(raw / RAW_ARTICLES_FILENAME, dtype={RAW_ARTICLE_ID_COLUMN: STRING_DTYPE})
-        self._require(customers, CUSTOMER_REQUIRED_COLUMNS)
-        self._require(articles, ARTICLE_REQUIRED_COLUMNS)
-        self._validate_dimension_keys(customers, CUSTOMER_ID_COLUMN, RAW_CUSTOMERS_FILENAME)
-        self._validate_dimension_keys(articles, RAW_ARTICLE_ID_COLUMN, RAW_ARTICLES_FILENAME)
-        self.customers = customers.rename(columns={CUSTOMER_AGE_COLUMN: AGE_RAW_COLUMN})
-        self.articles = articles.rename(columns=ARTICLE_RENAMES)
-        self.articles[PRODUCT_NAME_LENGTH_COLUMN] = self.articles[PRODUCT_NAME_COLUMN].astype(STRING_DTYPE).str.len()
-        self.articles[IMAGE_PATH_COLUMN] = self.articles[PRODUCT_ID_COLUMN].map(
-            lambda value: f"{IMAGE_DIRECTORY}/{value[:3]}/{value}{IMAGE_FILE_EXTENSION}"
+        if force:
+            self.transactions_path = self.runtime_transactions_path
+            self.customers_path = self.runtime_customers_path
+            self.articles_path = self.runtime_articles_path
+        transaction_source = None if force else self._find_reusable_csv(
+            "transactions", self.runtime_transactions_path, TRANSACTIONS_CACHE_FILENAME, TRANSACTION_REQUIRED_COLUMNS
         )
-        self.handle_missing_values(AGE_RAW_COLUMN, CUSTOMER_MEMBERSHIP_COLUMN)
-        self.customers.to_csv(self.customers_path, index=False)
-        self.articles.to_csv(self.articles_path, index=False)
+        customer_source = None if force else self._find_reusable_csv(
+            "customers", self.runtime_customers_path, CUSTOMERS_CACHE_FILENAME, CUSTOMER_NORMALIZED_REQUIRED_COLUMNS
+        )
+        article_source = None if force else self._find_reusable_csv(
+            "articles", self.runtime_articles_path, ARTICLES_CACHE_FILENAME, ARTICLE_NORMALIZED_REQUIRED_COLUMNS
+        )
 
+        if customer_source is not None:
+            self.customers_path = customer_source
+            self.customers = pd.read_csv(customer_source, dtype={CUSTOMER_ID_COLUMN: STRING_DTYPE})
+        else:
+            raw = self._require_raw_data_root()
+            customers = pd.read_csv(raw / RAW_CUSTOMERS_FILENAME, dtype={CUSTOMER_ID_COLUMN: STRING_DTYPE})
+            self._require(customers, CUSTOMER_REQUIRED_COLUMNS)
+            self._validate_dimension_keys(customers, CUSTOMER_ID_COLUMN, RAW_CUSTOMERS_FILENAME)
+            self.customers = customers.rename(columns={CUSTOMER_AGE_COLUMN: AGE_RAW_COLUMN})
+            self.handle_missing_values(AGE_RAW_COLUMN, CUSTOMER_MEMBERSHIP_COLUMN)
+            self.customers_path = self.runtime_customers_path
+            self.customers.to_csv(self.customers_path, index=False)
+            self._record_status("customers", "COMPUTED", self.customers_path)
+
+        if article_source is not None:
+            self.articles_path = article_source
+            self.articles = pd.read_csv(article_source, dtype={PRODUCT_ID_COLUMN: STRING_DTYPE})
+        else:
+            raw = self._require_raw_data_root()
+            articles = pd.read_csv(raw / RAW_ARTICLES_FILENAME, dtype={RAW_ARTICLE_ID_COLUMN: STRING_DTYPE})
+            self._require(articles, ARTICLE_REQUIRED_COLUMNS)
+            self._validate_dimension_keys(articles, RAW_ARTICLE_ID_COLUMN, RAW_ARTICLES_FILENAME)
+            self.articles = articles.rename(columns=ARTICLE_RENAMES)
+            self.articles[PRODUCT_NAME_LENGTH_COLUMN] = self.articles[PRODUCT_NAME_COLUMN].astype(STRING_DTYPE).str.len()
+            self.articles[IMAGE_PATH_COLUMN] = self.articles[PRODUCT_ID_COLUMN].map(
+                lambda value: f"{IMAGE_DIRECTORY}/{value[:3]}/{value}{IMAGE_FILE_EXTENSION}"
+            )
+            self.articles_path = self.runtime_articles_path
+            self.articles.to_csv(self.articles_path, index=False)
+            self._record_status("articles", "COMPUTED", self.articles_path)
+
+        if transaction_source is not None:
+            self.transactions_path = transaction_source
+            transaction_rows = self._csv_row_count(transaction_source)
+            return self._load_summary(transaction_rows)
+
+        raw = self._require_raw_data_root()
         total_rows, first_chunk = 0, True
         for chunk in pd.read_csv(
             raw / RAW_TRANSACTIONS_FILENAME,
@@ -141,20 +204,22 @@ class DataAnalyzer:
                 raise ValueError("transactions_train.csv contains missing identifiers")
             if not chunk[CUSTOMER_ID_COLUMN].isin(self.customers[CUSTOMER_ID_COLUMN]).all():
                 raise ValueError("transactions_train.csv references an unknown customer")
-            if not chunk[RAW_ARTICLE_ID_COLUMN].isin(articles[RAW_ARTICLE_ID_COLUMN]).all():
+            if not chunk[RAW_ARTICLE_ID_COLUMN].isin(self.articles[PRODUCT_ID_COLUMN]).all():
                 raise ValueError("transactions_train.csv references an unknown article")
             frame = chunk.rename(columns=TRANSACTION_RENAMES)
             frame[ORDER_DATE_COLUMN] = pd.to_datetime(frame[ORDER_DATE_COLUMN], errors=STRICT_PARSING_ERRORS)
             frame[UNIT_PRICE_COLUMN] = pd.to_numeric(frame[UNIT_PRICE_COLUMN], errors=STRICT_PARSING_ERRORS)
             frame.to_csv(
-                self.transactions_path,
+                self.runtime_transactions_path,
                 mode=CSV_WRITE_MODE if first_chunk else CSV_APPEND_MODE,
                 header=first_chunk,
                 index=False,
             )
             first_chunk = False
             total_rows += len(frame)
-        return {"transaction_rows": total_rows, "customer_rows": len(self.customers), "product_rows": len(self.articles)}
+        self.transactions_path = self.runtime_transactions_path
+        self._record_status("transactions", "COMPUTED", self.transactions_path)
+        return self._load_summary(total_rows)
 
     def handle_missing_values(
         self,
@@ -177,10 +242,14 @@ class DataAnalyzer:
             "missing_after": int(self.customers[CUSTOMER_AGE_COLUMN].isna().sum()),
         }
 
-    def engineer_features(self) -> pd.DataFrame:
+    def engineer_features(self, *, force: bool = False) -> pd.DataFrame:
         """Reuse cached image features or calculate full-array NumPy Mean/Std once."""
-        if self.images_path.is_file():
-            return pd.read_csv(self.images_path, dtype={PRODUCT_ID_COLUMN: STRING_DTYPE})
+        source = None if force else self._find_reusable_csv(
+            "image features", self.runtime_images_path, IMAGE_FEATURES_CACHE_FILENAME, IMAGE_FEATURE_REQUIRED_COLUMNS
+        )
+        if source is not None:
+            self.images_path = source
+            return pd.read_csv(source, dtype={PRODUCT_ID_COLUMN: STRING_DTYPE})
         if self.articles is None:
             self.articles = pd.read_csv(self.articles_path, dtype={PRODUCT_ID_COLUMN: STRING_DTYPE})
         records: list[dict[str, object]] = []
@@ -207,15 +276,27 @@ class DataAnalyzer:
                     record[IMAGE_STATUS_COLUMN] = IMAGE_STATUS_DECODE_ERROR
             records.append(record)
         features = pd.DataFrame.from_records(records)
+        self.images_path = self.runtime_images_path
         features.to_csv(self.images_path, index=False)
+        self._record_status("image features", "COMPUTED", self.images_path)
         return features
 
     def detect_outliers(
         self,
         column: str = DEFAULT_OUTLIER_COLUMN,
         threshold: float = DEFAULT_IQR_THRESHOLD,
+        *,
+        force: bool = False,
     ) -> dict[str, float | int]:
         """Calculate exact full-data IQR fences and counts with a disk-backed NumPy array."""
+        iqr_filename = IQR_OUTPUT_FILENAME.format(column=column)
+        if not force:
+            cached = self._find_reusable_json("IQR", self.context.aggregate_root / iqr_filename, iqr_filename)
+            if cached is not None:
+                result = json.loads(cached.read_text(encoding="utf-8"))
+                if result.get("column") == column and result.get("threshold") == threshold:
+                    return {key: result[key] for key in ("q1", "q3", "lower_fence", "upper_fence", "outlier_count")}
+                self._record_rejection("IQR", cached, "parameters do not match")
         row_count = sum(len(chunk) for chunk in pd.read_csv(self.transactions_path, usecols=[column], chunksize=self.chunksize))
         cache_path = self.context.aggregate_root / f"{column}_values{IQR_CACHE_EXTENSION}"
         values = np.memmap(cache_path, dtype=MEMMAP_DTYPE, mode=MEMMAP_WRITE_MODE, shape=(row_count,))
@@ -229,7 +310,11 @@ class DataAnalyzer:
         lower, upper = q1 - threshold * iqr, q3 + threshold * iqr
         count = int(np.count_nonzero((values < lower) | (values > upper)))
         del values
-        return {"q1": float(q1), "q3": float(q3), "lower_fence": float(lower), "upper_fence": float(upper), "outlier_count": count}
+        result = {"column": column, "threshold": threshold, "q1": float(q1), "q3": float(q3), "lower_fence": float(lower), "upper_fence": float(upper), "outlier_count": count}
+        output_path = self.context.aggregate_root / iqr_filename
+        output_path.write_text(json.dumps(result, indent=2), encoding="utf-8")
+        self._record_status("IQR", "COMPUTED", output_path)
+        return {key: result[key] for key in ("q1", "q3", "lower_fence", "upper_fence", "outlier_count")}
 
     def calculate_rfm(
         self,
@@ -238,8 +323,15 @@ class DataAnalyzer:
         amount_col: str = DEFAULT_RFM_AMOUNT_COLUMN,
         analysis_date: str | pd.Timestamp | None = None,
         partition_count: int = DEFAULT_RFM_PARTITION_COUNT,
+        *,
+        force: bool = False,
     ) -> pd.DataFrame:
         """Compute every-customer RFM through hash-partitioned CSV aggregation."""
+        if not force:
+            source = self._find_reusable_csv("RFM", self.runtime_rfm_path, RFM_OUTPUT_FILENAME, RFM_REQUIRED_COLUMNS)
+            if source is not None:
+                self.rfm_path = source
+                return pd.read_csv(source, dtype={customer_col: STRING_DTYPE})
         partition_root = self.context.aggregate_root / RFM_PARTITIONS_DIRECTORY
         partition_root.mkdir(exist_ok=True)
         paths = [
@@ -315,8 +407,91 @@ class DataAnalyzer:
             [RFM_SEGMENT_VIP, RFM_SEGMENT_LOYAL, RFM_SEGMENT_NEW, RFM_SEGMENT_CHURNED],
             default=RFM_SEGMENT_POTENTIAL,
         )
-        rfm.to_csv(self.context.aggregate_root / RFM_OUTPUT_FILENAME, index=False)
+        self.rfm_path = self.runtime_rfm_path
+        rfm.to_csv(self.rfm_path, index=False)
+        self._record_status("RFM", "COMPUTED", self.rfm_path)
         return rfm
+
+    def format_cache_report(self) -> str:
+        """Return evaluator-facing full-data artifact reuse status."""
+        lines = [f"Runtime mode: {'PRECOMPUTED FULL-DATA ARTIFACTS' if self.context.precomputed_root else self.context.runtime_name.upper()}"]
+        if self.context.precomputed_root is not None:
+            lines.append(f"Precomputed root: {self.context.precomputed_root}")
+        for artifact in ("transactions", "customers", "articles", "image features", "IQR", "RFM"):
+            lines.append(f"{artifact}: {self.artifact_status.get(artifact, 'PENDING')}")
+        return "\n".join(lines)
+
+    def _load_summary(self, transaction_rows: int) -> dict[str, int]:
+        return {"transaction_rows": transaction_rows, "customer_rows": len(self.customers), "product_rows": len(self.articles)}
+
+    def _require_raw_data_root(self) -> Path:
+        if self.context.raw_data_root is None:
+            raise ValueError(
+                "A required full-data artifact was unavailable or invalid and no raw H&M dataset is attached. "
+                "Attach the H&M competition input or set HM_RAW_DATA_DIR to rebuild it."
+            )
+        return self.context.raw_data_root
+
+    @staticmethod
+    def _csv_row_count(path: Path) -> int:
+        with path.open(encoding="utf-8") as source:
+            return sum(1 for _ in source) - 1
+
+    def _reuse_sources(self) -> list[tuple[str, Path]]:
+        sources = [("runtime cache", self.context.runtime_root)]
+        if self.context.precomputed_root is not None:
+            sources.append(("precomputed artifacts", self.context.precomputed_root))
+        return sources
+
+    def _find_reusable_csv(self, artifact: str, runtime_path: Path, filename: str, required_columns: tuple[str, ...]) -> Path | None:
+        for source_name, root in self._reuse_sources():
+            candidates = [runtime_path] if source_name == "runtime cache" else sorted(root.rglob(filename))
+            for candidate in candidates:
+                valid, reason = self._valid_csv(candidate, required_columns)
+                if valid:
+                    self._record_status(artifact, "REUSED", candidate)
+                    return candidate
+                if candidate.exists():
+                    self._record_rejection(artifact, candidate, reason)
+        return None
+
+    def _find_reusable_json(self, artifact: str, runtime_path: Path, filename: str) -> Path | None:
+        for source_name, root in self._reuse_sources():
+            candidates = [runtime_path] if source_name == "runtime cache" else sorted(root.rglob(filename))
+            for candidate in candidates:
+                try:
+                    if candidate.is_file() and isinstance(json.loads(candidate.read_text(encoding="utf-8")), dict):
+                        self._record_status(artifact, "REUSED", candidate)
+                        return candidate
+                    if candidate.exists():
+                        self._record_rejection(artifact, candidate, "invalid JSON object")
+                except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
+                    self._record_rejection(artifact, candidate, f"unreadable JSON ({error})")
+        return None
+
+    @staticmethod
+    def _valid_csv(path: Path, required_columns: tuple[str, ...]) -> tuple[bool, str]:
+        if not path.is_file():
+            return False, "file does not exist"
+        try:
+            sample = pd.read_csv(path, nrows=1)
+        except (OSError, UnicodeDecodeError, pd.errors.EmptyDataError, ValueError) as error:
+            return False, f"unreadable CSV ({error})"
+        missing = set(required_columns).difference(sample.columns)
+        if missing:
+            return False, f"missing required columns: {sorted(missing)}"
+        if sample.empty:
+            return False, "CSV has no data rows"
+        return True, ""
+
+    def _record_status(self, artifact: str, status: str, path: Path) -> None:
+        self.artifact_status[artifact] = status
+        self.cache_messages.append(f"{artifact}: {status} ({path})")
+
+    def _record_rejection(self, artifact: str, path: Path, reason: str) -> None:
+        message = f"{artifact}: REJECTED {path} ({reason})"
+        self.cache_messages.append(message)
+        print(message)
 
     @staticmethod
     def _require(frame: pd.DataFrame, columns: list[str]) -> None:

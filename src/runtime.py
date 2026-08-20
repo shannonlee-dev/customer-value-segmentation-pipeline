@@ -19,7 +19,7 @@ class RuntimeContext:
 
     runtime_name: str
     project_root: Path
-    raw_data_root: Path
+    raw_data_root: Path | None
     precomputed_root: Path | None
     runtime_mode: str
     runtime_root: Path
@@ -52,6 +52,9 @@ def discover_runtime(
     elif _is_dataset_root(local_candidate):
         raw_data_root = local_candidate
         runtime_name = "local"
+    elif precomputed_root is not None:
+        raw_data_root = None
+        runtime_name = "kaggle" if _is_kaggle_path(precomputed_root, kaggle_root) else "local"
     else:
         raise ValueError(_missing_dataset_message())
 
