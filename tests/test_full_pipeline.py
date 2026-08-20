@@ -72,6 +72,17 @@ class FullPipelineTests(unittest.TestCase):
         self.assertAlmostEqual(features.loc["0010000001", "image_mean"], float(np.mean(expected)), places=10)
         self.assertAlmostEqual(features.loc["0010000001", "image_std"], float(np.std(expected)), places=10)
 
+    def test_image_feature_cache_reuses_existing_csv_without_reopening_images(self):
+        analyzer = self.analyzer()
+        analyzer.load_data()
+        first = analyzer.engineer_features().set_index("product_id")
+        (self.raw / "images" / "001" / "0010000001.jpg").unlink()
+
+        cached = analyzer.engineer_features().set_index("product_id")
+
+        self.assertEqual(cached.loc["0010000001", "image_status"], "ok")
+        self.assertEqual(cached.loc["0010000001", "image_mean"], first.loc["0010000001", "image_mean"])
+
     def test_full_iqr_and_partitioned_rfm_keep_unique_purchase_dates(self):
         analyzer = self.analyzer()
         analyzer.load_data()

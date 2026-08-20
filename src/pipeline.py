@@ -178,7 +178,9 @@ class DataAnalyzer:
         }
 
     def engineer_features(self) -> pd.DataFrame:
-        """Read every available product image and calculate full-array NumPy Mean/Std."""
+        """Reuse cached image features or calculate full-array NumPy Mean/Std once."""
+        if self.images_path.is_file():
+            return pd.read_csv(self.images_path, dtype={PRODUCT_ID_COLUMN: STRING_DTYPE})
         if self.articles is None:
             self.articles = pd.read_csv(self.articles_path, dtype={PRODUCT_ID_COLUMN: STRING_DTYPE})
         records: list[dict[str, object]] = []
