@@ -406,7 +406,7 @@ class DataAnalyzer:
                 & (rfm[RFM_FREQUENCY_SCORE_COLUMN] >= RFM_HIGH_SCORE),
                 (rfm[RFM_RECENCY_SCORE_COLUMN] == RFM_BEST_SCORE)
                 & (rfm[RFM_FREQUENCY_SCORE_COLUMN] <= RFM_LOW_SCORE),
-                rfm[RFM_RECENCY_SCORE_COLUMN] <= RFM_LOW_SCORE,
+                rfm[RFM_RECENCY_SCORE_COLUMN] == RFM_SCORE_LABELS[0],
             ],
             [RFM_SEGMENT_VIP, RFM_SEGMENT_LOYAL, RFM_SEGMENT_NEW, RFM_SEGMENT_CHURNED],
             default=RFM_SEGMENT_POTENTIAL,
