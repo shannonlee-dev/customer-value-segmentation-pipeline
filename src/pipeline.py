@@ -7,8 +7,8 @@ import numpy as np
 import pandas as pd
 from matplotlib import image as mpimg
 
+from .reporting import summarize_numeric
 from .runtime import RuntimeContext
-from .statistics import summarize_numeric
 
 
 # Runtime and cache defaults
