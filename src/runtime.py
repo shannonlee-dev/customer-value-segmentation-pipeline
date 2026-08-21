@@ -7,6 +7,7 @@ import os
 
 
 REQUIRED_DATASET_FILES = ("transactions_train.csv", "customers.csv", "articles.csv", "images")
+REQUIRED_DATASET_CSV_FILES = ("transactions_train.csv", "customers.csv", "articles.csv")
 KAGGLE_DATASET_RELATIVE_PATH = Path("input/competitions/h-and-m-personalized-fashion-recommendations")
 DEFAULT_PRECOMPUTED_ROOT = Path(
     "/kaggle/input/notebooks/classichit/notebook9c33091b06/customer-value-segmentation-pipeline"
@@ -85,7 +86,11 @@ def discover_runtime(
 
 
 def _is_dataset_root(path: Path) -> bool:
-    return path.is_dir() and all((path / name).exists() for name in REQUIRED_DATASET_FILES)
+    return (
+        path.is_dir()
+        and all((path / name).is_file() for name in REQUIRED_DATASET_CSV_FILES)
+        and (path / "images").is_dir()
+    )
 
 
 def _resolve_precomputed_root(environment: Mapping[str, str]) -> Path | None:

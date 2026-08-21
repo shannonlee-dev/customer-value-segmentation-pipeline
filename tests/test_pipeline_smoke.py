@@ -51,6 +51,15 @@ class PipelineSmokeTest(unittest.TestCase):
 
             self.assertTrue(runtime._is_dataset_root(raw))
 
+    def test_runtime_dataset_root_rejects_images_file_instead_of_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            raw = Path(directory) / "raw"
+            raw.mkdir()
+            for name in ("transactions_train.csv", "customers.csv", "articles.csv", "images"):
+                (raw / name).touch()
+
+            self.assertFalse(runtime._is_dataset_root(raw))
+
     def test_calculate_iqr_statistics_returns_fences_and_outlier_count(self) -> None:
         result = _calculate_iqr_statistics(np.array([1, 2, 3, 4, 100]), threshold=1.5)
 
