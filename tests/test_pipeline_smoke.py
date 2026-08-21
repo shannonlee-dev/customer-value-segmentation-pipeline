@@ -187,6 +187,17 @@ class PipelineSmokeTest(unittest.TestCase):
             self.assertIn("rfm = analyzer.calculate_rfm(force=True)", code)
             self.assertIn("eda = analyzer.prepare_eda_artifacts(force=True)", code)
 
+    def test_generated_notebook_names_the_price_age_correlation_grain(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            notebook = build_notebook(Path(directory) / "analysis_report.ipynb")
+            rendered = nbformat.read(notebook, as_version=4)
+            code = "\n".join(cell.source for cell in rendered.cells if cell.cell_type == "code")
+
+            self.assertIn(
+                "transaction-weighted correlation between unit_price and imputed customer age",
+                code,
+            )
+
     def test_pipeline_generates_all_artifacts_from_a_complete_fixture(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

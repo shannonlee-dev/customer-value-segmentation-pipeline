@@ -173,7 +173,7 @@ print("Image array processing: matplotlib imread + full-array NumPy np.mean/np.s
 
 IQR uses the full price distribution. It is robust to extreme values because it uses the middle 50%, but a naturally right-skewed fashion-price distribution can still label legitimate premium products as outliers. The before/after boxplot below is therefore a diagnostic, not an instruction to delete data.
 
-Correlation A is full transaction/customer scope: price versus customer age. Correlation B is full product/image scope: image mean versus product-name length. A correlation describes linear association, not causation."""),
+Correlation A is a transaction-weighted correlation between unit_price and imputed customer age. Correlation B is full product/image scope: image mean versus product-name length. A correlation describes linear association, not causation."""),
         new_code_cell("""price_statistics = eda["price_statistics"]
 display(pd.DataFrame([price_statistics], index=["unit_price (full transactions)"]).round(6))
 distribution_note = "평균이 중앙값보다 높아 오른쪽 꼬리 가능성을 보여준다" if price_statistics["mean"] > price_statistics["median"] else "평균과 중앙값의 관계상 강한 오른쪽 꼬리 근거는 제한적이다"
@@ -186,7 +186,7 @@ price_age_corr = eda["price_age_correlation"]
 image_text_corr = eda["image_text_correlation"]
 monthly_value = pd.read_csv(eda["monthly_summary_path"])
 product_features = image_features
-display(Markdown(f"**Transaction/customer scope:** price–age correlation is `r = {price_age_corr:+.3f}`. This is a linear-association measure; age alone is unlikely to explain price when the magnitude is close to zero."))
+display(Markdown(f"**transaction-weighted correlation between unit_price and imputed customer age:** `r = {price_age_corr:+.3f}`. This is a linear-association measure; age alone is unlikely to explain price when the magnitude is close to zero."))
 display(Markdown(f"**Product/image scope:** image-mean–name-length correlation is `r = {image_text_corr:+.3f}`. This measures association between simple visual brightness and text length, not product quality or demand."))
 
 plt.figure(figsize=(8, 4))
