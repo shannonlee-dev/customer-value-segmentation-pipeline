@@ -63,4 +63,5 @@ class NotebookContractTest(unittest.TestCase):
         self.assertIn("available_fonts", code)
         self.assertIn('plt.title(CHART_TEXT["price_title"])', code)
         self.assertIn("price_image_mean_corr", code)
+        self.assertIn("price_image_mean_corr = transaction_feature_correlation", code)
         self.assertIn("transaction_path", code)

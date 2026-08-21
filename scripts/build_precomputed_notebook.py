@@ -165,7 +165,7 @@ print("이미지 배열 처리: 사전계산 결과 재사용")"""
     chart_code = notebook.cells[6].source
     chart_code = chart_code.replace("product_features = image_features\n", "")
     start = chart_code.index("monthly_summary_path =")
-    end = chart_code.index("price_age_note =")
+    end = chart_code.index("def transaction_feature_correlation")
     notebook.cells[6].source = (
         chart_code[:start]
         + "# monthly_value는 사전계산 결과에서 이미 읽었습니다.\n"
