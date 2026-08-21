@@ -131,10 +131,7 @@ if context.precomputed_root is not None:
 print("프로젝트 소스: 사용 가능")
 print("H&M 소스 검증: 통과")
 print(f"실행 산출물 루트: {context.runtime_root}")
-print("분석 범위: 전체 데이터셋")
-print("고객 표본 추출: 없음")
-print("상품 표본 추출: 없음")
-print("이미지 분석 표본 추출: 없음")"""),
+print("분석 범위: 전체 데이터셋")"""),
         new_markdown_cell("""## 전체 데이터 준비와 멀티모달 특징
 
 거래는 Pandas chunk로 읽습니다. `transactions`, `customers`, `articles`, `image_features`는 각각의 자연스러운 grain을 유지합니다. 이렇게 하면 수천만 거래 행에 고객·상품 속성을 반복하지 않으며, 통계에 필요한 컬럼만 필요한 시점에 chunk 단위로 join합니다.

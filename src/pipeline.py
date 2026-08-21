@@ -153,106 +153,6 @@ class DataAnalyzer:
         transaction_rows = self._prepare_transactions(force=force)
         return self._load_summary(transaction_rows)
 
-    def _prepare_customers(self, *, force: bool) -> None:
-        source = None if force else self._find_reusable_csv(
-            "customers",
-            self.runtime_customers_path,
-            CUSTOMERS_CACHE_FILENAME,
-            CUSTOMER_NORMALIZED_REQUIRED_COLUMNS,
-            forbidden_columns=("fashion_news_frequency", "age_was_missing"),
-        )
-        if source is not None:
-            self.customers_path = source
-            self.customers = pd.read_csv(source, dtype={CUSTOMER_ID_COLUMN: STRING_DTYPE})
-            return
-
-        raw = self._require_raw_data_root()
-        customers = pd.read_csv(
-            raw / RAW_CUSTOMERS_FILENAME,
-            usecols=RAW_CUSTOMER_REQUIRED_COLUMNS,
-            dtype={CUSTOMER_ID_COLUMN: STRING_DTYPE},
-        )
-        self._require(customers, RAW_CUSTOMER_REQUIRED_COLUMNS)
-        self._validate_dimension_keys(customers, CUSTOMER_ID_COLUMN, RAW_CUSTOMERS_FILENAME)
-        self.customers = customers.rename(columns={CUSTOMER_AGE_COLUMN: ORIGINAL_AGE_COLUMN})
-        self.handle_missing_values(ORIGINAL_AGE_COLUMN, CUSTOMER_MEMBERSHIP_COLUMN)
-        self.customers_path = self.runtime_customers_path
-        self.customers.to_csv(self.customers_path, index=False)
-        self._record_status("customers", "COMPUTED", self.customers_path)
-
-    def _prepare_articles(self, *, force: bool) -> None:
-        source = None if force else self._find_reusable_csv(
-            "articles",
-            self.runtime_articles_path,
-            ARTICLES_CACHE_FILENAME,
-            ARTICLE_NORMALIZED_REQUIRED_COLUMNS,
-            forbidden_columns=("category",),
-        )
-        if source is not None:
-            self.articles_path = source
-            self.articles = pd.read_csv(source, dtype={PRODUCT_ID_COLUMN: STRING_DTYPE})
-            return
-
-        raw = self._require_raw_data_root()
-        articles = pd.read_csv(
-            raw / RAW_ARTICLES_FILENAME,
-            usecols=RAW_ARTICLE_REQUIRED_COLUMNS,
-            dtype={RAW_ARTICLE_ID_COLUMN: STRING_DTYPE},
-        )
-        self._require(articles, RAW_ARTICLE_REQUIRED_COLUMNS)
-        self._validate_dimension_keys(articles, RAW_ARTICLE_ID_COLUMN, RAW_ARTICLES_FILENAME)
-        self.articles = articles.rename(columns=ARTICLE_RENAMES)
-        self.articles[IMAGE_PATH_COLUMN] = self.articles[PRODUCT_ID_COLUMN].map(
-            lambda value: f"{IMAGE_DIRECTORY}/{value[:3]}/{value}{".jpg"}"
-        )
-        self.articles_path = self.runtime_articles_path
-        self.articles.to_csv(self.articles_path, index=False)
-        self._record_status("articles", "COMPUTED", self.articles_path)
-
-    def _prepare_transactions(self, *, force: bool) -> int:
-        source = None if force else self._find_reusable_csv(
-            "transactions",
-            self.runtime_transactions_path,
-            TRANSACTIONS_CACHE_FILENAME,
-            TRANSACTION_NORMALIZED_REQUIRED_COLUMNS,
-            forbidden_columns=("sales_channel_id",),
-        )
-        if source is not None:
-            self.transactions_path = source
-            return self._csv_row_count(source)
-
-        raw = self._require_raw_data_root()
-        total_rows, first_chunk = 0, True
-        for chunk in pd.read_csv(
-            raw / RAW_TRANSACTIONS_FILENAME,
-            usecols=RAW_TRANSACTION_REQUIRED_COLUMNS,
-            dtype=RAW_TRANSACTION_DTYPES,
-            chunksize=self.chunksize,
-        ):
-            self._require(chunk, RAW_TRANSACTION_REQUIRED_COLUMNS)
-            if chunk[[CUSTOMER_ID_COLUMN, RAW_ARTICLE_ID_COLUMN]].isna().any().any():
-                raise ValueError("transactions_train.csv contains missing identifiers")
-            if not chunk[CUSTOMER_ID_COLUMN].isin(self.customers[CUSTOMER_ID_COLUMN]).all():
-                raise ValueError("transactions_train.csv references an unknown customer")
-            if not chunk[RAW_ARTICLE_ID_COLUMN].isin(self.articles[PRODUCT_ID_COLUMN]).all():
-                raise ValueError("transactions_train.csv references an unknown article")
-            frame = chunk.rename(columns=TRANSACTION_RENAMES)
-            frame[ORDER_DATE_COLUMN] = pd.to_datetime(frame[ORDER_DATE_COLUMN], errors=STRICT_PARSING_ERRORS)
-            frame[UNIT_PRICE_COLUMN] = pd.to_numeric(frame[UNIT_PRICE_COLUMN], errors=STRICT_PARSING_ERRORS)
-            frame.to_csv(
-                self.runtime_transactions_path,
-                mode=CSV_WRITE_MODE if first_chunk else CSV_APPEND_MODE,
-                header=first_chunk,
-                index=False,
-            )
-            first_chunk = False
-            total_rows += len(frame)
-        self.transactions_path = self.runtime_transactions_path
-        self._record_status("transactions", "COMPUTED", self.transactions_path)
-        return total_rows
-
-
-
     def handle_missing_values(
         self,
         column: str,
@@ -536,6 +436,102 @@ class DataAnalyzer:
         for artifact in ("transactions", "customers", "articles", "image features", "IQR", "RFM"):
             lines.append(f"{artifact}: {self.artifact_status.get(artifact, 'PENDING')}")
         return "\n".join(lines)
+
+    # Data preparation helpers
+    def _prepare_customers(self, *, force: bool) -> None:
+        source = None if force else self._find_reusable_csv(
+            "customers",
+            self.runtime_customers_path,
+            CUSTOMERS_CACHE_FILENAME,
+            CUSTOMER_NORMALIZED_REQUIRED_COLUMNS,
+            forbidden_columns=("fashion_news_frequency", "age_was_missing"),
+        )
+        if source is not None:
+            self.customers_path = source
+            self.customers = pd.read_csv(source, dtype={CUSTOMER_ID_COLUMN: STRING_DTYPE})
+            return
+        raw = self._require_raw_data_root()
+        customers = pd.read_csv(
+            raw / RAW_CUSTOMERS_FILENAME,
+            usecols=RAW_CUSTOMER_REQUIRED_COLUMNS,
+            dtype={CUSTOMER_ID_COLUMN: STRING_DTYPE},
+        )
+        self._require(customers, RAW_CUSTOMER_REQUIRED_COLUMNS)
+        self._validate_dimension_keys(customers, CUSTOMER_ID_COLUMN, RAW_CUSTOMERS_FILENAME)
+        self.customers = customers.rename(columns={CUSTOMER_AGE_COLUMN: ORIGINAL_AGE_COLUMN})
+        self.handle_missing_values(ORIGINAL_AGE_COLUMN, CUSTOMER_MEMBERSHIP_COLUMN)
+        self.customers_path = self.runtime_customers_path
+        self.customers.to_csv(self.customers_path, index=False)
+        self._record_status("customers", "COMPUTED", self.customers_path)
+
+    def _prepare_articles(self, *, force: bool) -> None:
+        source = None if force else self._find_reusable_csv(
+            "articles",
+            self.runtime_articles_path,
+            ARTICLES_CACHE_FILENAME,
+            ARTICLE_NORMALIZED_REQUIRED_COLUMNS,
+            forbidden_columns=("category",),
+        )
+        if source is not None:
+            self.articles_path = source
+            self.articles = pd.read_csv(source, dtype={PRODUCT_ID_COLUMN: STRING_DTYPE})
+            return
+        raw = self._require_raw_data_root()
+        articles = pd.read_csv(
+            raw / RAW_ARTICLES_FILENAME,
+            usecols=RAW_ARTICLE_REQUIRED_COLUMNS,
+            dtype={RAW_ARTICLE_ID_COLUMN: STRING_DTYPE},
+        )
+        self._require(articles, RAW_ARTICLE_REQUIRED_COLUMNS)
+        self._validate_dimension_keys(articles, RAW_ARTICLE_ID_COLUMN, RAW_ARTICLES_FILENAME)
+        self.articles = articles.rename(columns=ARTICLE_RENAMES)
+        self.articles[IMAGE_PATH_COLUMN] = self.articles[PRODUCT_ID_COLUMN].map(
+            lambda value: f"{IMAGE_DIRECTORY}/{value[:3]}/{value}{".jpg"}"
+        )
+        self.articles_path = self.runtime_articles_path
+        self.articles.to_csv(self.articles_path, index=False)
+        self._record_status("articles", "COMPUTED", self.articles_path)
+
+    def _prepare_transactions(self, *, force: bool) -> int:
+        source = None if force else self._find_reusable_csv(
+            "transactions",
+            self.runtime_transactions_path,
+            TRANSACTIONS_CACHE_FILENAME,
+            TRANSACTION_NORMALIZED_REQUIRED_COLUMNS,
+            forbidden_columns=("sales_channel_id",),
+        )
+        if source is not None:
+            self.transactions_path = source
+            return self._csv_row_count(source)
+        raw = self._require_raw_data_root()
+        total_rows, first_chunk = 0, True
+        for chunk in pd.read_csv(
+            raw / RAW_TRANSACTIONS_FILENAME,
+            usecols=RAW_TRANSACTION_REQUIRED_COLUMNS,
+            dtype=RAW_TRANSACTION_DTYPES,
+            chunksize=self.chunksize,
+        ):
+            self._require(chunk, RAW_TRANSACTION_REQUIRED_COLUMNS)
+            if chunk[[CUSTOMER_ID_COLUMN, RAW_ARTICLE_ID_COLUMN]].isna().any().any():
+                raise ValueError("transactions_train.csv contains missing identifiers")
+            if not chunk[CUSTOMER_ID_COLUMN].isin(self.customers[CUSTOMER_ID_COLUMN]).all():
+                raise ValueError("transactions_train.csv references an unknown customer")
+            if not chunk[RAW_ARTICLE_ID_COLUMN].isin(self.articles[PRODUCT_ID_COLUMN]).all():
+                raise ValueError("transactions_train.csv references an unknown article")
+            frame = chunk.rename(columns=TRANSACTION_RENAMES)
+            frame[ORDER_DATE_COLUMN] = pd.to_datetime(frame[ORDER_DATE_COLUMN], errors=STRICT_PARSING_ERRORS)
+            frame[UNIT_PRICE_COLUMN] = pd.to_numeric(frame[UNIT_PRICE_COLUMN], errors=STRICT_PARSING_ERRORS)
+            frame.to_csv(
+                self.runtime_transactions_path,
+                mode=CSV_WRITE_MODE if first_chunk else CSV_APPEND_MODE,
+                header=first_chunk,
+                index=False,
+            )
+            first_chunk = False
+            total_rows += len(frame)
+        self.transactions_path = self.runtime_transactions_path
+        self._record_status("transactions", "COMPUTED", self.transactions_path)
+        return total_rows
 
     def _load_summary(self, transaction_rows: int) -> dict[str, int]:
         return {"transaction_rows": transaction_rows, "customer_rows": len(self.customers), "product_rows": len(self.articles)}

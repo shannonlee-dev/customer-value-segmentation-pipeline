@@ -11,9 +11,6 @@ from scripts.build_notebook import build_notebook
 
 REQUIRED_MARKERS = (
     "분석 범위: 전체 데이터셋",
-    "고객 표본 추출: 없음",
-    "상품 표본 추출: 없음",
-    "이미지 분석 표본 추출: 없음",
 )
 
 
