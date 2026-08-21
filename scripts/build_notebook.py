@@ -262,6 +262,32 @@ print("처리한 상품 수:", summary["product_rows"])
 print("IQR 이상치 수:", iqr["outlier_count"])
 print("총 실행 시간(초):", round(time.monotonic() - started, 1))"""),
     ]
+    cells.insert(5, new_code_cell("""image_path = analyzer.images_path
+article_path = analyzer.articles_path
+output_path = Path("/kaggle/working/product_images_enriched.csv")
+
+images = pd.read_csv(image_path, dtype={"product_id": "string"})
+articles = pd.read_csv(article_path, dtype={"product_id": "string"})
+
+if "product_name_length" not in articles.columns:
+    articles["product_name_length"] = articles["product_name"].fillna("").str.len()
+if "product_name_length" in images.columns:
+    images = images.drop(columns=["product_name_length"])
+
+product_images_enriched = images.merge(
+    articles[["product_id", "product_name_length"]],
+    on="product_id",
+    how="left",
+)
+
+product_images_enriched.to_csv(output_path, index=False)
+
+print(f"저장 완료: {output_path}")
+print(product_images_enriched.columns.tolist())
+product_images_enriched.head()
+
+image_features = product_images_enriched
+product_features = product_images_enriched"""))
     notebook = new_notebook(cells=cells)
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)

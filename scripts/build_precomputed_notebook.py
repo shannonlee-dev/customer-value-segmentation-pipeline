@@ -17,6 +17,7 @@ def build_notebook(path: Path = Path("notebooks/precomputed_report.ipynb")) -> P
     """Write a visual twin of the analysis report that never rebuilds raw data."""
     build_analysis_notebook(path)
     notebook = nbformat.read(path, as_version=4)
+    notebook.cells.pop(5)
 
     notebook.cells[0].source = PROJECT_BOOTSTRAP_SOURCE + """
 
