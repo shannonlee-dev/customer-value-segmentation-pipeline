@@ -4,6 +4,7 @@ import sys
 from pathlib import Path
 
 import nbformat
+from nbformat.v4 import new_code_cell
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
@@ -118,10 +119,11 @@ iqr = json.loads((PRECOMPUTED_ROOT / "aggregates" / "iqr_unit_price.json").read_
 rfm = pd.read_csv(PRECOMPUTED_ROOT / "aggregates" / "rfm.csv", dtype={"customer_id": "string"})
 image_path = PRECOMPUTED_ROOT / "features" / "product_images" / "product_images.csv"
 article_path = PRECOMPUTED_ROOT / "processed" / "articles.csv"
-output_path = Path("/kaggle/working/product_images_enriched.csv")
 
 images = pd.read_csv(image_path, dtype={"product_id": "string"})
-articles = pd.read_csv(article_path, dtype={"product_id": "string"})
+articles = pd.read_csv(article_path, dtype={"product_id": "string"})"""
+
+    notebook.cells.insert(5, new_code_cell("""output_path = Path("/kaggle/working/product_images_enriched.csv")
 
 if "product_name_length" not in articles.columns:
     articles["product_name_length"] = articles["product_name"].fillna("").str.len()
@@ -168,18 +170,18 @@ display(transaction_preview.head())
 transaction_preview.info()
 display(transaction_preview.describe())
 print("테이블은 거래·고객·상품·상품 이미지 단위로 정규화된 상태를 유지합니다.")
-print("이미지 배열 처리: 사전계산 결과 재사용")"""
+print("이미지 배열 처리: 사전계산 결과 재사용")"""))
 
-    chart_code = notebook.cells[6].source
+    chart_code = notebook.cells[7].source
     chart_code = chart_code.replace("product_features = image_features\n", "")
     start = chart_code.index("monthly_summary_path =")
     end = chart_code.index("def transaction_feature_correlation")
-    notebook.cells[6].source = (
+    notebook.cells[7].source = (
         chart_code[:start]
         + "# monthly_value는 사전계산 결과에서 이미 읽었습니다.\n"
         + chart_code[end:]
     )
-    notebook.cells[6].source = notebook.cells[6].source.replace(
+    notebook.cells[7].source = notebook.cells[7].source.replace(
         "analyzer.transactions_path",
         "transaction_path",
     )
@@ -202,8 +204,8 @@ print("이미지 배열 처리: 사전계산 결과 재사용")"""
         'plt.title("월별 합계 상대 데이터셋 값")': 'plt.title(CHART_TEXT["monthly_title"])',
         'plt.xlabel("주문 월")': 'plt.xlabel(CHART_TEXT["month_x"])',
     }.items():
-        notebook.cells[6].source = notebook.cells[6].source.replace(original, replacement)
-    notebook.cells[8].source = notebook.cells[8].source.replace(
+        notebook.cells[7].source = notebook.cells[7].source.replace(original, replacement)
+    notebook.cells[9].source = notebook.cells[9].source.replace(
         "insight_path = context.artifact_root / \"business_insights.md\"",
         'insight_path = Path("/kaggle/working/business_insights.md")',
     )

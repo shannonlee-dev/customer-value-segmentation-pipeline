@@ -72,7 +72,7 @@ class NotebookContractTest(unittest.TestCase):
             precomputed = nbformat.read(build_precomputed_notebook(root / "precomputed_report.ipynb"), as_version=4)
             code = "\n".join(cell.source for cell in precomputed.cells if cell.cell_type == "code")
 
-        self.assertEqual(len(precomputed.cells), len(main.cells))
+        self.assertEqual(len(precomputed.cells), len(main.cells) + 1)
         self.assertEqual(
             [cell.source for cell in precomputed.cells if cell.cell_type == "markdown"],
             [cell.source for cell in main.cells if cell.cell_type == "markdown"],
@@ -91,3 +91,19 @@ class NotebookContractTest(unittest.TestCase):
         self.assertIn("price_image_mean_corr", code)
         self.assertIn("price_image_mean_corr = transaction_feature_correlation", code)
         self.assertIn("transaction_path", code)
+
+    def test_precomputed_notebook_has_a_dedicated_enriched_images_export_cell(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            notebook = nbformat.read(
+                build_precomputed_notebook(Path(directory) / "precomputed_report.ipynb"),
+                as_version=4,
+            )
+
+        export_cells = [
+            cell.source
+            for cell in notebook.cells
+            if cell.cell_type == "code" and "product_images_enriched = images.merge(" in cell.source
+        ]
+        self.assertEqual(len(export_cells), 1)
+        self.assertIn('output_path = Path("/kaggle/working/product_images_enriched.csv")', export_cells[0])
+        self.assertIn("product_images_enriched.head()", export_cells[0])
