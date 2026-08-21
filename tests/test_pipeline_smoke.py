@@ -232,6 +232,15 @@ class PipelineSmokeTest(unittest.TestCase):
             self.assertIn("rfm = analyzer.calculate_rfm(force=recompute_artifacts)", code)
             self.assertIn("eda = analyzer.prepare_eda_artifacts(force=recompute_artifacts)", code)
 
+    def test_generated_notebook_finds_precomputed_monthly_summary_when_needed(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            notebook = build_notebook(Path(directory) / "analysis_report.ipynb")
+            rendered = nbformat.read(notebook, as_version=4)
+            code = "\n".join(cell.source for cell in rendered.cells if cell.cell_type == "code")
+
+            self.assertIn('monthly_summary_path = eda.get("monthly_summary_path")', code)
+            self.assertIn('context.precomputed_root.rglob("monthly_summary.csv")', code)
+
     def test_generated_notebook_names_the_price_age_correlation_grain(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             notebook = build_notebook(Path(directory) / "analysis_report.ipynb")

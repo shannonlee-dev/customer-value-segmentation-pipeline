@@ -104,9 +104,13 @@ display(transaction_preview.describe())
 print("테이블은 거래·고객·상품·상품 이미지 단위로 정규화된 상태를 유지합니다.")
 print("이미지 배열 처리: 사전계산 결과 재사용")"""
 
-    notebook.cells[6].source = notebook.cells[6].source.replace(
-        'monthly_value = pd.read_csv(eda["monthly_summary_path"])',
-        "# monthly_value는 사전계산 결과에서 이미 읽었습니다.",
+    chart_code = notebook.cells[6].source
+    start = chart_code.index("monthly_summary_path =")
+    end = chart_code.index("product_features = image_features")
+    notebook.cells[6].source = (
+        chart_code[:start]
+        + "# monthly_value는 사전계산 결과에서 이미 읽었습니다.\n"
+        + chart_code[end:]
     )
     notebook.cells[8].source = notebook.cells[8].source.replace(
         "insight_path = context.artifact_root / \"business_insights.md\"",

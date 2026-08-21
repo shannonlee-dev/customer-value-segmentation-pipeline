@@ -119,7 +119,15 @@ display(Markdown(
 ))
 price_age_corr = eda["price_age_correlation"]
 image_text_corr = eda["image_text_correlation"]
-monthly_value = pd.read_csv(eda["monthly_summary_path"])
+monthly_summary_path = eda.get("monthly_summary_path")
+if monthly_summary_path is None:
+    if context.precomputed_root is None:
+        raise KeyError("monthly_summary_path")
+    matches = list(context.precomputed_root.rglob("monthly_summary.csv"))
+    if len(matches) != 1:
+        raise RuntimeError(f"monthly_summary.csv를 하나만 찾아야 합니다. 발견 수: {len(matches)}")
+    monthly_summary_path = matches[0]
+monthly_value = pd.read_csv(monthly_summary_path)
 product_features = image_features
 display(Markdown(f"**unit_price와 대치된 고객 연령의 거래 가중 상관관계:** `r = {price_age_corr:+.3f}`. 이는 선형 연관성 지표이며, 크기가 0에 가까우면 연령만으로 가격을 설명하기 어렵습니다."))
 display(Markdown(f"**상품/이미지 범위:** 이미지 평균과 상품명 길이의 상관관계는 `r = {image_text_corr:+.3f}`입니다. 이는 단순 이미지 밝기와 텍스트 길이의 연관성일 뿐 상품 품질이나 수요를 뜻하지 않습니다."))
