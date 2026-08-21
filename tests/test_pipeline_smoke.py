@@ -3,6 +3,7 @@
 import tempfile
 import unittest
 from pathlib import Path
+from shutil import copytree
 from unittest.mock import patch
 
 import numpy as np
@@ -78,10 +79,42 @@ class PipelineSmokeTest(unittest.TestCase):
                 "max": 0.5,
             }
 
-            with patch("src.pipeline.summarize_numeric", return_value=shared_summary):
+            with (
+                patch("src.pipeline.summarize_numeric", return_value=shared_summary),
+                patch.object(analyzer, "engineer_features", wraps=analyzer.engineer_features) as image_features,
+            ):
                 result = analyzer.prepare_eda_artifacts(force=True)
 
             self.assertEqual(result["price_statistics"], shared_summary)
+            image_features.assert_called_once_with(force=False)
+
+    def test_prepare_eda_artifacts_reuses_precomputed_images_without_raw_data(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            raw = root / "raw"
+            raw.mkdir()
+            write_fixture(raw)
+            source_context = discover_runtime(
+                Path.cwd(),
+                {"HM_RAW_DATA_DIR": str(raw), "HM_RUNTIME_DIR": str(root / "source-runtime")},
+            )
+            source = DataAnalyzer(source_context, chunksize=2)
+            source.load_data()
+            source.engineer_features()
+            precomputed = root / "precomputed"
+            copytree(source_context.runtime_root, precomputed)
+
+            context = discover_runtime(
+                Path.cwd(),
+                {"HM_PRECOMPUTED_DIR": str(precomputed), "HM_RUNTIME_DIR": str(root / "runtime")},
+            )
+            analyzer = DataAnalyzer(context, chunksize=2)
+            analyzer.load_data()
+
+            result = analyzer.prepare_eda_artifacts(force=True)
+
+            self.assertEqual(result["price_statistics"]["count"], 4)
+            self.assertEqual(analyzer.artifact_status["image features"], "REUSED")
 
     def test_boxplot_statistics_uses_observed_tukey_whiskers(self) -> None:
         result = DataAnalyzer._boxplot_statistics(np.array([1, 2, 3, 4, 100]), "Price")

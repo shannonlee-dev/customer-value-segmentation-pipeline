@@ -407,7 +407,8 @@ class DataAnalyzer:
         denominator = np.sqrt((count * sum_x2 - sum_x ** 2) * (count * sum_y2 - sum_y ** 2))
         price_age_correlation = 0.0 if denominator == 0 else float((count * sum_xy - sum_x * sum_y) / denominator)
 
-        images = self.engineer_features(force=force)
+        # Refresh EDA summaries without rebuilding reusable image features.
+        images = self.engineer_features(force=False)
         image_text_correlation = float(images[[IMAGE_MEAN_COLUMN, PRODUCT_NAME_LENGTH_COLUMN]].corr().iloc[0, 1])
         histogram_counts, histogram_edges = np.histogram(values, bins=EDA_HISTOGRAM_BIN_COUNT)
         summary = {
