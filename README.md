@@ -41,6 +41,14 @@ HM_RAW_DATA_DIR=data/raw/h-and-m .venv/bin/jupyter notebook notebooks/analysis_r
 
 다른 위치라면 `HM_RAW_DATA_DIR=/external/path`를 설정한다. 결과 cache는 기본 `data/runtime/` 또는 `HM_RUNTIME_DIR`에 생성되며 Git에서 무시된다.
 
+이미 계산해 둔 결과를 로컬에서 재사용하려면 원본 데이터 대신 `HM_PRECOMPUTED_DIR`을 지정한다.
+
+```bash
+HM_PRECOMPUTED_DIR=/external/hm-precomputed .venv/bin/jupyter notebook notebooks/analysis_report.ipynb
+```
+
+해당 폴더에는 `processed/`, `features/`, `aggregates/` 아래의 분석 산출물이 있어야 한다. 필요한 파일이 없으면 원본 데이터 경로(`HM_RAW_DATA_DIR`)를 함께 지정해 다시 계산한다.
+
 ## Kaggle 실데이터 검증
 
 1. 이 저장소와 이전 full-data Kaggle Notebook Version output을 Input으로 추가한다. 기본 경로가 다르면 `HM_PRECOMPUTED_DIR=/kaggle/input/...`를 설정한다.

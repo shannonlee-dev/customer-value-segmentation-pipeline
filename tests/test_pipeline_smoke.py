@@ -188,6 +188,21 @@ class PipelineSmokeTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "no raw H&M dataset"):
                 analyzer.engineer_features(force=True)
 
+    def test_discover_runtime_accepts_a_local_precomputed_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            precomputed = root / "precomputed"
+            precomputed.mkdir()
+
+            context = discover_runtime(
+                Path.cwd(),
+                {"HM_PRECOMPUTED_DIR": str(precomputed), "HM_RUNTIME_DIR": str(root / "runtime")},
+            )
+
+            self.assertEqual(context.runtime_name, "local")
+            self.assertEqual(context.runtime_mode, "precomputed")
+            self.assertEqual(context.precomputed_root, precomputed)
+
     def test_generated_notebook_uses_product_name_length_from_image_features(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             notebook = build_notebook(Path(directory) / "analysis_report.ipynb")
@@ -197,16 +212,15 @@ class PipelineSmokeTest(unittest.TestCase):
             self.assertIn("product_features = image_features", code)
             self.assertNotIn('articles[["product_id", "product_name_length"]]', code)
 
-    def test_generated_notebook_validates_and_configures_precomputed_artifacts(self) -> None:
+    def test_generated_notebook_preserves_an_explicit_precomputed_directory(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             notebook = build_notebook(Path(directory) / "analysis_report.ipynb")
             rendered = nbformat.read(notebook, as_version=4)
             setup = rendered.cells[0].source
 
-            self.assertIn('PRECOMPUTED_ROOT = VERSION_ROOT / "hm-customer-value"', setup)
-            self.assertIn('PRECOMPUTED_ROOT / "processed" / "transactions.csv"', setup)
-            self.assertIn('"product_images.csv"', setup)
-            self.assertIn('os.environ["HM_PRECOMPUTED_DIR"] = str(PRECOMPUTED_ROOT)', setup)
+            self.assertIn('precomputed = os.environ.get("HM_PRECOMPUTED_DIR")', setup)
+            self.assertIn('os.environ.setdefault("PROJECT_ROOT", str(PROJECT_ROOT))', setup)
+            self.assertNotIn('os.environ["HM_PRECOMPUTED_DIR"] =', setup)
 
     def test_generated_notebook_recomputes_rfm_and_eda_after_policy_changes(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

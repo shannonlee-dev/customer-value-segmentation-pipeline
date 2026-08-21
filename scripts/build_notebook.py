@@ -11,81 +11,28 @@ def build_notebook(path: Path = Path("notebooks/analysis_report.ipynb")) -> Path
         new_code_cell("""import os
 from pathlib import Path
 
-BASE = Path("/kaggle/input/notebooks/classichit")
+def find_project_root():
+    candidates = [Path.cwd(), *Path.cwd().parents]
+    if os.environ.get("PROJECT_ROOT"):
+        candidates.append(Path(os.environ["PROJECT_ROOT"]))
+    candidates.append(Path("/kaggle/working/customer-value-segmentation-pipeline"))
+    for candidate in candidates:
+        if (candidate / "src" / "pipeline.py").is_file():
+            return candidate.resolve()
+    kaggle_sources = list(Path("/kaggle/input").rglob("customer-value-segmentation-pipeline/src/pipeline.py"))
+    if len(kaggle_sources) == 1:
+        return kaggle_sources[0].parent.parent
+    raise RuntimeError("프로젝트 소스를 찾지 못했습니다. PROJECT_ROOT를 설정하거나 저장소를 연결하세요.")
 
-# 1. 프로젝트 소스 찾기
-pipeline_files = list(
-    BASE.rglob("customer-value-segmentation-pipeline/src/pipeline.py")
-)
+PROJECT_ROOT = find_project_root()
+os.environ.setdefault("PROJECT_ROOT", str(PROJECT_ROOT))
 
-if not pipeline_files:
-    raise RuntimeError(
-        "프로젝트 소스를 찾지 못했습니다. "
-        "사전 계산된 노트북 버전을 입력으로 추가했는지 확인하세요."
-    )
-
-if len(pipeline_files) > 1:
-    raise RuntimeError(
-        f"프로젝트 버전이 여러 개 발견됐습니다: {len(pipeline_files)}개\\n"
-        "평가용 Input은 하나만 연결하세요."
-    )
-
-pipeline_file = pipeline_files[0]
-
-PROJECT_ROOT = pipeline_file.parent.parent
-VERSION_ROOT = PROJECT_ROOT.parent
-PRECOMPUTED_ROOT = VERSION_ROOT / "hm-customer-value"
-
-if not PRECOMPUTED_ROOT.is_dir():
-    raise RuntimeError(
-        f"같은 버전에서 hm-customer-value를 찾지 못했습니다:\\n"
-        f"{PRECOMPUTED_ROOT}"
-    )
-
-# 2. 핵심 전체 데이터 산출물 검증
-required = [
-    PRECOMPUTED_ROOT / "processed" / "transactions.csv",
-    PRECOMPUTED_ROOT / "processed" / "customers.csv",
-    PRECOMPUTED_ROOT / "processed" / "articles.csv",
-    PRECOMPUTED_ROOT / "aggregates" / "rfm.csv",
-]
-
-missing = [p for p in required if not p.is_file()]
-
-if missing:
-    raise RuntimeError(
-        "필수 precomputed artifact가 없습니다:\\n"
-        + "\\n".join(map(str, missing))
-    )
-
-# 3. 이미지 특징 캐시 확인
-image_features = list(
-    (PRECOMPUTED_ROOT / "features").rglob("product_images.csv")
-)
-
-if len(image_features) != 1:
-    raise RuntimeError(
-        f"product_images.csv 검증 실패: {len(image_features)}개 발견\\n"
-        "이미지 feature가 없으면 전체 이미지를 다시 처리할 수 있습니다."
-    )
-
-# 4. EDA/RFM 캐시 확인
-for filename in [
-    "eda_summary.json",
-    "monthly_summary.csv",
-]:
-    matches = list(PRECOMPUTED_ROOT.rglob(filename))
-    if not matches:
-        raise RuntimeError(f"EDA artifact 없음: {filename}")
-
-# 5. 환경변수 전달
-os.environ["PROJECT_ROOT"] = str(PROJECT_ROOT)
-os.environ["HM_PRECOMPUTED_DIR"] = str(PRECOMPUTED_ROOT)
-
-print("프로젝트 루트:", PROJECT_ROOT)
-print("사전 계산 루트:", PRECOMPUTED_ROOT)
-print("이미지 특징:", image_features[0])
-print("사전 계산 산출물 검증: 통과")"""),
+precomputed = os.environ.get("HM_PRECOMPUTED_DIR")
+if precomputed:
+    print("사전 계산 루트:", Path(precomputed).expanduser().resolve())
+else:
+    print("사전 계산 산출물 없이 실행합니다. 원본 데이터가 있으면 전체 데이터를 계산합니다.")
+print("프로젝트 루트:", PROJECT_ROOT)"""),
         new_markdown_cell("""# H&M 고객 가치 분석
 
 이 노트북을 열고 **모두 실행**을 선택하세요. 쓰기 가능한 실행 캐시, `HM_PRECOMPUTED_DIR`, 연결한 Kaggle 전체 데이터 산출물, Kaggle competition 입력, `data/raw/h-and-m`, `HM_RAW_DATA_DIR`을 자동으로 찾습니다. 모든 지표는 사용 가능한 전체 데이터셋을 사용하며 고객·거래·상품·이미지를 표본 추출하지 않습니다.
@@ -104,17 +51,7 @@ import pandas as pd
 import seaborn as sns
 from IPython.display import Markdown, display
 
-def find_project_root():
-    candidates = [Path.cwd(), *Path.cwd().parents]
-    if os.environ.get("PROJECT_ROOT"):
-        candidates.append(Path(os.environ["PROJECT_ROOT"]))
-    candidates.append(Path("/kaggle/working/customer-value-segmentation-pipeline"))
-    for candidate in candidates:
-        if (candidate / "src" / "pipeline.py").is_file():
-            return candidate.resolve()
-    raise RuntimeError("프로젝트 소스를 찾지 못했습니다. 저장소를 연결하거나 복사한 뒤 필요하면 PROJECT_ROOT를 설정하세요.")
-
-ROOT = find_project_root()
+ROOT = Path(os.environ["PROJECT_ROOT"]).resolve()
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 from src.pipeline import DataAnalyzer
