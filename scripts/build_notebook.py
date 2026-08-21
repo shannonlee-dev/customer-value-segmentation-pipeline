@@ -120,7 +120,7 @@ print("이미지 배열 처리: matplotlib imread + 전체 배열 NumPy np.mean/
 
 IQR은 전체 가격 분포를 사용합니다. 중간 50%를 사용하므로 극단값에 강건하지만, 자연스럽게 오른쪽으로 긴 가격 분포에서도 정상적인 premium 상품을 이상치로 표시할 수 있습니다. 따라서 아래 전후 boxplot은 진단용이며 데이터를 삭제하라는 지시가 아닙니다.
 
-상관관계 A는 unit_price와 대치된 고객 연령의 거래 가중 상관관계입니다. 상관관계 B는 전체 상품/이미지 범위에서 image mean과 상품명 길이의 관계입니다. 상관관계는 선형 연관성을 나타낼 뿐 인과관계를 뜻하지 않습니다."""),
+상관관계 A는 unit_price와 대치된 고객 연령의 거래 가중 상관관계입니다. 상관관계 B는 unit_price와 상품 이미지 평균 밝기의 거래 가중 상관관계입니다. 상관관계는 선형 연관성을 나타낼 뿐 인과관계를 뜻하지 않습니다."""),
         new_code_cell("""price_statistics = eda["price_statistics"]
 display(pd.DataFrame([price_statistics], index=["unit_price (전체 거래)"]).round(6))
 distribution_note = "평균이 중앙값보다 높아 오른쪽 꼬리 가능성을 보여준다" if price_statistics["mean"] > price_statistics["median"] else "평균과 중앙값의 관계상 강한 오른쪽 꼬리 근거는 제한적이다"
@@ -130,7 +130,6 @@ display(Markdown(
     f"{distribution_note}. 따라서 평균만 보지 않고 중앙값과 사분위 범위를 함께 사용해야 한다."
 ))
 price_age_corr = eda["price_age_correlation"]
-image_text_corr = eda["image_text_correlation"]
 monthly_summary_path = eda.get("monthly_summary_path")
 if monthly_summary_path is None:
     if context.precomputed_root is None:
@@ -140,10 +139,31 @@ if monthly_summary_path is None:
         raise RuntimeError(f"monthly_summary.csv를 하나만 찾아야 합니다. 발견 수: {len(matches)}")
     monthly_summary_path = matches[0]
 monthly_value = pd.read_csv(monthly_summary_path)
+def transaction_feature_correlation(transaction_path, features, feature_column):
+    lookup = features[["product_id", feature_column]].dropna().drop_duplicates("product_id")
+    count = sum_x = sum_y = sum_xy = sum_x2 = sum_y2 = 0.0
+    for chunk in pd.read_csv(
+        transaction_path,
+        usecols=["product_id", "unit_price"],
+        dtype={"product_id": "string"},
+        chunksize=500_000,
+    ):
+        paired = chunk.merge(lookup, on="product_id", how="inner")
+        x = paired["unit_price"].to_numpy(dtype=float)
+        y = paired[feature_column].to_numpy(dtype=float)
+        count += len(x); sum_x += x.sum(); sum_y += y.sum(); sum_xy += (x * y).sum(); sum_x2 += (x * x).sum(); sum_y2 += (y * y).sum()
+    denominator = ((count * sum_x2 - sum_x ** 2) * (count * sum_y2 - sum_y ** 2)) ** 0.5
+    return 0.0 if denominator == 0 else float((count * sum_xy - sum_x * sum_y) / denominator)
+
+price_image_mean_corr = transaction_feature_correlation(
+    analyzer.transactions_path,
+    product_features,
+    "image_mean",
+)
 price_age_note = "매우 약한 선형 관계" if abs(price_age_corr) < 0.1 else "약한 선형 관계"
-image_text_note = "매우 약한 선형 관계" if abs(image_text_corr) < 0.1 else "약한 선형 관계"
+price_image_note = "매우 약한 선형 관계" if abs(price_image_mean_corr) < 0.1 else "약한 선형 관계"
 display(Markdown(f"**상관관계 1 — 가격·대치 연령:** 거래 가중 상관계수는 `r = {price_age_corr:+.3f}`로 {price_age_note}입니다. 연령만으로 가격을 설명하기 어렵고, 인과관계를 뜻하지 않습니다."))
-display(Markdown(f"**상관관계 2 — 이미지 평균·상품명 길이:** 상관계수는 `r = {image_text_corr:+.3f}`로 {image_text_note}입니다. 단순 밝기와 텍스트 길이의 관계일 뿐 상품 품질이나 수요를 뜻하지 않습니다."))
+display(Markdown(f"**상관관계 2 — 가격·이미지 평균:** 거래 가중 상관계수는 `r = {price_image_mean_corr:+.3f}`로 {price_image_note}입니다. 이미지 밝기만으로 가격을 설명하기 어렵고, 인과관계를 뜻하지 않습니다."))
 
 plt.figure(figsize=(8, 4))
 plt.stairs(eda["histogram_counts"], eda["histogram_edges"])

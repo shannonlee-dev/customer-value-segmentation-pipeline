@@ -171,6 +171,10 @@ print("이미지 배열 처리: 사전계산 결과 재사용")"""
         + "# monthly_value는 사전계산 결과에서 이미 읽었습니다.\n"
         + chart_code[end:]
     )
+    notebook.cells[6].source = notebook.cells[6].source.replace(
+        "analyzer.transactions_path",
+        "transaction_path",
+    )
     for original, replacement in {
         'plt.title("상대 가격 분포")': 'plt.title(CHART_TEXT["price_title"])',
         'plt.xlabel("상대 데이터셋 가격값")': 'plt.xlabel(CHART_TEXT["price_x"])',

@@ -250,7 +250,8 @@ class PipelineSmokeTest(unittest.TestCase):
 
             self.assertIn("### 수치 근거와 해석", code)
             self.assertIn("상관관계 1 — 가격·대치 연령", code)
-            self.assertIn("상관관계 2 — 이미지 평균·상품명 길이", code)
+            self.assertIn("상관관계 2 — 가격·이미지 평균", code)
+            self.assertIn("transaction_feature_correlation", code)
             self.assertIn("매우 약한 선형 관계", code)
 
     def test_generated_notebook_localizes_human_facing_text_to_korean(self) -> None:
