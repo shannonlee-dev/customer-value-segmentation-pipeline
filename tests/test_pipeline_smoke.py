@@ -224,9 +224,21 @@ class PipelineSmokeTest(unittest.TestCase):
             code = "\n".join(cell.source for cell in rendered.cells if cell.cell_type == "code")
 
             self.assertIn(
-                "transaction-weighted correlation between unit_price and imputed customer age",
+                "unit_price와 대치된 고객 연령의 거래 가중 상관관계",
                 code,
             )
+
+    def test_generated_notebook_localizes_human_facing_text_to_korean(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            notebook = build_notebook(Path(directory) / "analysis_report.ipynb")
+            rendered = nbformat.read(notebook, as_version=4)
+            content = "\n".join(cell.source for cell in rendered.cells)
+
+            self.assertIn("# H&M 고객 가치 분석", content)
+            self.assertIn("상대 가격 분포", content)
+            self.assertIn("RFM 세분화", content)
+            self.assertNotIn("Open this notebook", content)
+            self.assertNotIn("Relative Price Distribution", content)
 
     def test_pipeline_generates_all_artifacts_from_a_complete_fixture(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
