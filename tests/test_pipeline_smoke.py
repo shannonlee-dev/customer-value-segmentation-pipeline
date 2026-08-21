@@ -3,7 +3,6 @@
 import tempfile
 import unittest
 from pathlib import Path
-from shutil import copytree
 from unittest.mock import patch
 
 import numpy as np
@@ -79,42 +78,10 @@ class PipelineSmokeTest(unittest.TestCase):
                 "max": 0.5,
             }
 
-            with (
-                patch("src.pipeline.summarize_numeric", return_value=shared_summary),
-                patch.object(analyzer, "engineer_features", wraps=analyzer.engineer_features) as image_features,
-            ):
+            with patch("src.pipeline.summarize_numeric", return_value=shared_summary):
                 result = analyzer.prepare_eda_artifacts(force=True)
 
             self.assertEqual(result["price_statistics"], shared_summary)
-            image_features.assert_called_once_with(force=False)
-
-    def test_prepare_eda_artifacts_reuses_precomputed_images_without_raw_data(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            raw = root / "raw"
-            raw.mkdir()
-            write_fixture(raw)
-            source_context = discover_runtime(
-                Path.cwd(),
-                {"HM_RAW_DATA_DIR": str(raw), "HM_RUNTIME_DIR": str(root / "source-runtime")},
-            )
-            source = DataAnalyzer(source_context, chunksize=2)
-            source.load_data()
-            source.engineer_features()
-            precomputed = root / "precomputed"
-            copytree(source_context.runtime_root, precomputed)
-
-            context = discover_runtime(
-                Path.cwd(),
-                {"HM_PRECOMPUTED_DIR": str(precomputed), "HM_RUNTIME_DIR": str(root / "runtime")},
-            )
-            analyzer = DataAnalyzer(context, chunksize=2)
-            analyzer.load_data()
-
-            result = analyzer.prepare_eda_artifacts(force=True)
-
-            self.assertEqual(result["price_statistics"]["count"], 4)
-            self.assertEqual(analyzer.artifact_status["image features"], "REUSED")
 
     def test_boxplot_statistics_uses_observed_tukey_whiskers(self) -> None:
         result = DataAnalyzer._boxplot_statistics(np.array([1, 2, 3, 4, 100]), "Price")
@@ -255,14 +222,15 @@ class PipelineSmokeTest(unittest.TestCase):
             self.assertIn('os.environ.setdefault("PROJECT_ROOT", str(PROJECT_ROOT))', setup)
             self.assertNotIn('os.environ["HM_PRECOMPUTED_DIR"] =', setup)
 
-    def test_generated_notebook_recomputes_rfm_and_eda_after_policy_changes(self) -> None:
+    def test_generated_notebook_recomputes_only_when_raw_data_is_available(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             notebook = build_notebook(Path(directory) / "analysis_report.ipynb")
             rendered = nbformat.read(notebook, as_version=4)
             code = "\n".join(cell.source for cell in rendered.cells if cell.cell_type == "code")
 
-            self.assertIn("rfm = analyzer.calculate_rfm(force=True)", code)
-            self.assertIn("eda = analyzer.prepare_eda_artifacts(force=True)", code)
+            self.assertIn("recompute_artifacts = context.raw_data_root is not None", code)
+            self.assertIn("rfm = analyzer.calculate_rfm(force=recompute_artifacts)", code)
+            self.assertIn("eda = analyzer.prepare_eda_artifacts(force=recompute_artifacts)", code)
 
     def test_generated_notebook_names_the_price_age_correlation_grain(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

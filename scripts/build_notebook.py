@@ -79,8 +79,9 @@ print("분석 범위: 전체 데이터셋")"""),
         new_code_cell("""summary = analyzer.load_data()
 image_features = analyzer.engineer_features()
 iqr = analyzer.detect_outliers()
-rfm = analyzer.calculate_rfm(force=True)
-eda = analyzer.prepare_eda_artifacts(force=True)
+recompute_artifacts = context.raw_data_root is not None
+rfm = analyzer.calculate_rfm(force=recompute_artifacts)
+eda = analyzer.prepare_eda_artifacts(force=recompute_artifacts)
 print(analyzer.format_cache_report())
 
 transaction_schema = pd.read_csv(analyzer.transactions_path, nrows=0)
