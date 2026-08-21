@@ -122,15 +122,20 @@ monthly_value = pd.read_csv(PRECOMPUTED_ROOT / "aggregates" / "monthly_summary.c
 transaction_path = PRECOMPUTED_ROOT / "processed" / "transactions.csv"
 article_path = PRECOMPUTED_ROOT / "processed" / "articles.csv"
 
-if "product_name_length" not in image_features.columns:
+product_features = image_features.copy()
+if "product_name_length" not in product_features.columns:
     article_features = pd.read_csv(article_path, dtype={"product_id": "string"})
     if "product_name_length" not in article_features.columns:
         article_features["product_name_length"] = article_features["product_name"].fillna("").str.len()
-    image_features = image_features.merge(
+    product_features = product_features.merge(
         article_features[["product_id", "product_name_length"]],
         on="product_id",
         how="left",
     )
+image_features = product_features
+product_features_path = Path("/kaggle/working/product_images_enriched.csv")
+product_features.to_csv(product_features_path, index=False)
+print(f"이미지·텍스트 특징 저장: {product_features_path}")
 
 transaction_schema = pd.read_csv(transaction_path, nrows=0)
 article_schema = pd.read_csv(article_path, nrows=0)
@@ -158,8 +163,9 @@ print("테이블은 거래·고객·상품·상품 이미지 단위로 정규화
 print("이미지 배열 처리: 사전계산 결과 재사용")"""
 
     chart_code = notebook.cells[6].source
+    chart_code = chart_code.replace("product_features = image_features\n", "")
     start = chart_code.index("monthly_summary_path =")
-    end = chart_code.index("product_features = image_features")
+    end = chart_code.index("price_age_note =")
     notebook.cells[6].source = (
         chart_code[:start]
         + "# monthly_value는 사전계산 결과에서 이미 읽었습니다.\n"
@@ -171,6 +177,7 @@ print("이미지 배열 처리: 사전계산 결과 재사용")"""
         'plt.ylabel("거래 건수")': 'plt.ylabel(CHART_TEXT["count_y"])',
         'plt.title("IQR 필터링 전후 상대 가격")': 'plt.title(CHART_TEXT["iqr_title"])',
         'plt.xlabel("IQR 처리 상태")': 'plt.xlabel(CHART_TEXT["iqr_x"])',
+        'plt.ylabel("상대 데이터셋 가격값")': 'plt.ylabel(CHART_TEXT["price_x"])',
         'plt.title("RFM 세그먼트별 고객 수")': 'plt.title(CHART_TEXT["segment_title"])',
         'plt.xlabel("RFM 세그먼트")': 'plt.xlabel(CHART_TEXT["segment_x"])',
         'plt.ylabel("고객 수")': 'plt.ylabel(CHART_TEXT["customer_y"])',

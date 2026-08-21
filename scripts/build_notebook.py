@@ -87,6 +87,18 @@ print(analyzer.format_cache_report())
 transaction_schema = pd.read_csv(analyzer.transactions_path, nrows=0)
 customers = pd.read_csv(analyzer.customers_path, dtype={"customer_id": "string"})
 articles = pd.read_csv(analyzer.articles_path, dtype={"product_id": "string"})
+product_features = image_features.copy()
+if "product_name_length" not in product_features.columns:
+    name_lengths = articles[["product_id", "product_name"]].copy()
+    name_lengths["product_name_length"] = name_lengths["product_name"].fillna("").str.len()
+    product_features = product_features.merge(
+        name_lengths[["product_id", "product_name_length"]],
+        on="product_id",
+        how="left",
+    )
+product_features_path = context.feature_root / "product_images_enriched.csv"
+product_features.to_csv(product_features_path, index=False)
+print(f"이미지·텍스트 특징 저장: {product_features_path}")
 inventory = pd.DataFrame([
     ["transactions", "거래 1건", f"{summary['transaction_rows']:,} × {len(transaction_schema.columns)}", "날짜, 수치, 식별자", "RFM과 시계열"],
     ["customers", "고객 1명", f"{len(customers):,} × {len(customers.columns)}", "수치, 범주, 식별자", "연령과 회원 정보"],
@@ -113,7 +125,7 @@ IQR은 전체 가격 분포를 사용합니다. 중간 50%를 사용하므로 �
 display(pd.DataFrame([price_statistics], index=["unit_price (전체 거래)"]).round(6))
 distribution_note = "평균이 중앙값보다 높아 오른쪽 꼬리 가능성을 보여준다" if price_statistics["mean"] > price_statistics["median"] else "평균과 중앙값의 관계상 강한 오른쪽 꼬리 근거는 제한적이다"
 display(Markdown(
-    f"**전체 거래 가격 기술통계:** 평균은 `{price_statistics['mean']:.6f}`, 중앙값은 `{price_statistics['median']:.6f}`, "
+    f"### 수치 근거와 해석\\n\\n**기술통계:** 전체 `{price_statistics['count']:,}`건에서 평균은 `{price_statistics['mean']:.6f}`, 중앙값은 `{price_statistics['median']:.6f}`, "
     f"표준편차는 `{price_statistics['std']:.6f}`이며 Q1–Q3는 `{price_statistics['q1']:.6f}–{price_statistics['q3']:.6f}`이다. "
     f"{distribution_note}. 따라서 평균만 보지 않고 중앙값과 사분위 범위를 함께 사용해야 한다."
 ))
@@ -128,9 +140,10 @@ if monthly_summary_path is None:
         raise RuntimeError(f"monthly_summary.csv를 하나만 찾아야 합니다. 발견 수: {len(matches)}")
     monthly_summary_path = matches[0]
 monthly_value = pd.read_csv(monthly_summary_path)
-product_features = image_features
-display(Markdown(f"**unit_price와 대치된 고객 연령의 거래 가중 상관관계:** `r = {price_age_corr:+.3f}`. 이는 선형 연관성 지표이며, 크기가 0에 가까우면 연령만으로 가격을 설명하기 어렵습니다."))
-display(Markdown(f"**상품/이미지 범위:** 이미지 평균과 상품명 길이의 상관관계는 `r = {image_text_corr:+.3f}`입니다. 이는 단순 이미지 밝기와 텍스트 길이의 연관성일 뿐 상품 품질이나 수요를 뜻하지 않습니다."))
+price_age_note = "매우 약한 선형 관계" if abs(price_age_corr) < 0.1 else "약한 선형 관계"
+image_text_note = "매우 약한 선형 관계" if abs(image_text_corr) < 0.1 else "약한 선형 관계"
+display(Markdown(f"**상관관계 1 — 가격·대치 연령:** 거래 가중 상관계수는 `r = {price_age_corr:+.3f}`로 {price_age_note}입니다. 연령만으로 가격을 설명하기 어렵고, 인과관계를 뜻하지 않습니다."))
+display(Markdown(f"**상관관계 2 — 이미지 평균·상품명 길이:** 상관계수는 `r = {image_text_corr:+.3f}`로 {image_text_note}입니다. 단순 밝기와 텍스트 길이의 관계일 뿐 상품 품질이나 수요를 뜻하지 않습니다."))
 
 plt.figure(figsize=(8, 4))
 plt.stairs(eda["histogram_counts"], eda["histogram_edges"])

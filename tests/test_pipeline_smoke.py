@@ -203,14 +203,15 @@ class PipelineSmokeTest(unittest.TestCase):
             self.assertEqual(context.runtime_mode, "precomputed")
             self.assertEqual(context.precomputed_root, precomputed)
 
-    def test_generated_notebook_uses_product_name_length_from_image_features(self) -> None:
+    def test_generated_notebook_exports_enriched_image_and_text_features(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             notebook = build_notebook(Path(directory) / "analysis_report.ipynb")
             rendered = nbformat.read(notebook, as_version=4)
             code = "\n".join(cell.source for cell in rendered.cells if cell.cell_type == "code")
 
-            self.assertIn("product_features = image_features", code)
-            self.assertNotIn('articles[["product_id", "product_name_length"]]', code)
+            self.assertIn("product_features = image_features.copy()", code)
+            self.assertIn('product_features_path = context.feature_root / "product_images_enriched.csv"', code)
+            self.assertIn('name_lengths[["product_id", "product_name_length"]]', code)
 
     def test_generated_notebook_preserves_an_explicit_precomputed_directory(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -241,16 +242,16 @@ class PipelineSmokeTest(unittest.TestCase):
             self.assertIn('monthly_summary_path = eda.get("monthly_summary_path")', code)
             self.assertIn('context.precomputed_root.rglob("monthly_summary.csv")', code)
 
-    def test_generated_notebook_names_the_price_age_correlation_grain(self) -> None:
+    def test_generated_notebook_shows_numeric_evidence_for_two_correlations(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             notebook = build_notebook(Path(directory) / "analysis_report.ipynb")
             rendered = nbformat.read(notebook, as_version=4)
             code = "\n".join(cell.source for cell in rendered.cells if cell.cell_type == "code")
 
-            self.assertIn(
-                "unit_price와 대치된 고객 연령의 거래 가중 상관관계",
-                code,
-            )
+            self.assertIn("### 수치 근거와 해석", code)
+            self.assertIn("상관관계 1 — 가격·대치 연령", code)
+            self.assertIn("상관관계 2 — 이미지 평균·상품명 길이", code)
+            self.assertIn("매우 약한 선형 관계", code)
 
     def test_generated_notebook_localizes_human_facing_text_to_korean(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
