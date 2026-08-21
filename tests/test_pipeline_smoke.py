@@ -39,6 +39,42 @@ def write_fixture(raw: Path) -> None:
 
 
 class PipelineSmokeTest(unittest.TestCase):
+    def test_extract_image_features_calculates_text_and_pixel_features(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            raw = root / "raw"
+            raw.mkdir()
+            write_fixture(raw)
+            context = discover_runtime(
+                Path.cwd(),
+                {"HM_RAW_DATA_DIR": str(raw), "HM_RUNTIME_DIR": str(root / "runtime")},
+            )
+            analyzer = DataAnalyzer(context)
+
+            record = analyzer._extract_image_features(raw, "0010000001", "Item one", "images/001/0010000001.jpg")
+
+            self.assertEqual(record["product_name_length"], 8)
+            self.assertTrue(np.isfinite(record["image_mean"]))
+            self.assertTrue(np.isfinite(record["image_std"]))
+
+    def test_engineer_features_requires_raw_data_when_rebuilding(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            precomputed = root / "precomputed"
+            precomputed.mkdir()
+            context = discover_runtime(
+                Path.cwd(),
+                {"HM_PRECOMPUTED_DIR": str(precomputed), "HM_RUNTIME_DIR": str(root / "runtime")},
+            )
+            analyzer = DataAnalyzer(context)
+            analyzer.articles = pd.DataFrame(
+                [["0010000001", "Item one", "images/001/0010000001.jpg"]],
+                columns=["product_id", "product_name", "image_path"],
+            )
+
+            with self.assertRaisesRegex(ValueError, "no raw H&M dataset"):
+                analyzer.engineer_features(force=True)
+
     def test_generated_notebook_uses_product_name_length_from_image_features(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             notebook = build_notebook(Path(directory) / "analysis_report.ipynb")

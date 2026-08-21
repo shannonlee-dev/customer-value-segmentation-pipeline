@@ -60,15 +60,12 @@ ARTICLE_RENAMES = {RAW_ARTICLE_ID_COLUMN: PRODUCT_ID_COLUMN, RAW_PRODUCT_NAME_CO
 DEFAULT_MISSING_VALUE_STRATEGY = "median"
 SUPPORTED_MISSING_VALUE_STRATEGIES = ("median", "mean")
 IMAGE_DIRECTORY = "images"
-IMAGE_FILE_EXTENSION = ".jpg"
 IMAGE_RGB_CHANNEL_COUNT = 3
 
 # IQR policies
 DEFAULT_OUTLIER_COLUMN = UNIT_PRICE_COLUMN
 DEFAULT_IQR_THRESHOLD = 1.5
 IQR_QUANTILES = (0.25, 0.75)
-MEMMAP_DTYPE = "float64"
-IQR_MEMMAP_EXTENSION = ".dat"
 
 # RFM policies
 DEFAULT_RFM_CUSTOMER_COLUMN = CUSTOMER_ID_COLUMN
@@ -189,7 +186,7 @@ class DataAnalyzer:
         self._validate_dimension_keys(articles, RAW_ARTICLE_ID_COLUMN, RAW_ARTICLES_FILENAME)
         self.articles = articles.rename(columns=ARTICLE_RENAMES)
         self.articles[IMAGE_PATH_COLUMN] = self.articles[PRODUCT_ID_COLUMN].map(
-            lambda value: f"{IMAGE_DIRECTORY}/{value[:3]}/{value}{IMAGE_FILE_EXTENSION}"
+            lambda value: f"{IMAGE_DIRECTORY}/{value[:3]}/{value}{".jpg"}"
         )
         self.articles_path = self.runtime_articles_path
         self.articles.to_csv(self.articles_path, index=False)
@@ -273,32 +270,47 @@ class DataAnalyzer:
             return pd.read_csv(source, dtype={PRODUCT_ID_COLUMN: STRING_DTYPE})
         if self.articles is None:
             self.articles = pd.read_csv(self.articles_path, dtype={PRODUCT_ID_COLUMN: STRING_DTYPE})
-        records: list[dict[str, object]] = []
-        for product_id, product_name, image_path in self.articles[[PRODUCT_ID_COLUMN, PRODUCT_NAME_COLUMN, IMAGE_PATH_COLUMN]].itertuples(index=False):
-            path = self.context.raw_data_root / image_path
-            record: dict[str, object] = {
-                PRODUCT_ID_COLUMN: product_id,
-                IMAGE_PATH_COLUMN: image_path,
-                PRODUCT_NAME_LENGTH_COLUMN: len(str(product_name)) if pd.notna(product_name) else np.nan,
-                IMAGE_MEAN_COLUMN: np.nan,
-                IMAGE_STD_COLUMN: np.nan,
-            }
-            if path.is_file():
-                try:
-                    pixels = np.asarray(mpimg.imread(path))
-                    if pixels.ndim == 2:
-                        pixels = pixels[..., np.newaxis]
-                    pixels = pixels[..., :IMAGE_RGB_CHANNEL_COUNT]
-                    record[IMAGE_MEAN_COLUMN] = float(np.mean(pixels))
-                    record[IMAGE_STD_COLUMN] = float(np.std(pixels))
-                except (OSError, ValueError, SyntaxError):
-                    pass
-            records.append(record)
+        raw = self._require_raw_data_root()
+        records = [
+            self._extract_image_features(raw, product_id, product_name, image_path)
+            for product_id, product_name, image_path in self.articles[
+                [PRODUCT_ID_COLUMN, PRODUCT_NAME_COLUMN, IMAGE_PATH_COLUMN]
+            ].itertuples(index=False)
+        ]
         features = pd.DataFrame.from_records(records)
         self.images_path = self.runtime_images_path
         features.to_csv(self.images_path, index=False)
         self._record_status("image features", "COMPUTED", self.images_path)
         return features
+
+    @staticmethod
+    def _extract_image_features(
+        raw_data_root: Path,
+        product_id: object,
+        product_name: object,
+        image_path: str,
+    ) -> dict[str, object]:
+        """Calculate the text and pixel features for one product image."""
+        record: dict[str, object] = {
+            PRODUCT_ID_COLUMN: product_id,
+            IMAGE_PATH_COLUMN: image_path,
+            PRODUCT_NAME_LENGTH_COLUMN: len(str(product_name)) if pd.notna(product_name) else np.nan,
+            IMAGE_MEAN_COLUMN: np.nan,
+            IMAGE_STD_COLUMN: np.nan,
+        }
+        path = raw_data_root / image_path
+        if not path.is_file():
+            return record
+        try:
+            pixels = np.asarray(mpimg.imread(path))
+            if pixels.ndim == 2:
+                pixels = pixels[..., np.newaxis]
+            pixels = pixels[..., :IMAGE_RGB_CHANNEL_COUNT]
+            record[IMAGE_MEAN_COLUMN] = float(np.mean(pixels))
+            record[IMAGE_STD_COLUMN] = float(np.std(pixels))
+        except (OSError, ValueError, SyntaxError):
+            pass
+        return record
 
     def detect_outliers(
         self,
@@ -317,11 +329,11 @@ class DataAnalyzer:
                     return {key: result[key] for key in ("q1", "q3", "lower_fence", "upper_fence", "outlier_count")}
                 self._record_rejection("IQR", cached, "parameters do not match")
         row_count = sum(len(chunk) for chunk in pd.read_csv(self.transactions_path, usecols=[column], chunksize=self.chunksize))
-        cache_path = self.context.aggregate_root / f"{column}_values{IQR_MEMMAP_EXTENSION}"
-        values = np.memmap(cache_path, dtype=MEMMAP_DTYPE, mode=MEMMAP_WRITE_MODE, shape=(row_count,))
+        cache_path = self.context.aggregate_root / f"{column}_values{".dat"}"
+        values = np.memmap(cache_path, dtype="float64", mode=MEMMAP_WRITE_MODE, shape=(row_count,))
         offset = 0
         for chunk in pd.read_csv(self.transactions_path, usecols=[column], chunksize=self.chunksize):
-            numeric = pd.to_numeric(chunk[column], errors=STRICT_PARSING_ERRORS).to_numpy(dtype=MEMMAP_DTYPE)
+            numeric = pd.to_numeric(chunk[column], errors=STRICT_PARSING_ERRORS).to_numpy(dtype="float64")
             values[offset : offset + len(numeric)] = numeric
             offset += len(numeric)
         q1, q3 = np.quantile(values, IQR_QUANTILES)
@@ -451,16 +463,16 @@ class DataAnalyzer:
                 self._record_rejection("EDA", summary_path, "missing required summary fields")
 
         row_count = self._csv_row_count(self.transactions_path)
-        values_path = self.context.aggregate_root / f"{DEFAULT_OUTLIER_COLUMN}_values{IQR_MEMMAP_EXTENSION}"
-        if not values_path.is_file() or values_path.stat().st_size != row_count * np.dtype(MEMMAP_DTYPE).itemsize:
-            values = np.memmap(values_path, dtype=MEMMAP_DTYPE, mode=MEMMAP_WRITE_MODE, shape=(row_count,))
+        values_path = self.context.aggregate_root / f"{DEFAULT_OUTLIER_COLUMN}_values{".dat"}"
+        if not values_path.is_file() or values_path.stat().st_size != row_count * np.dtype("float64").itemsize:
+            values = np.memmap(values_path, dtype="float64", mode=MEMMAP_WRITE_MODE, shape=(row_count,))
             offset = 0
             for chunk in pd.read_csv(self.transactions_path, usecols=[DEFAULT_OUTLIER_COLUMN], chunksize=self.chunksize):
-                numeric = pd.to_numeric(chunk[DEFAULT_OUTLIER_COLUMN], errors=STRICT_PARSING_ERRORS).to_numpy(dtype=MEMMAP_DTYPE)
+                numeric = pd.to_numeric(chunk[DEFAULT_OUTLIER_COLUMN], errors=STRICT_PARSING_ERRORS).to_numpy(dtype="float64")
                 values[offset : offset + len(numeric)] = numeric
                 offset += len(numeric)
             del values
-        values = np.memmap(values_path, dtype=MEMMAP_DTYPE, mode="r", shape=(row_count,))
+        values = np.memmap(values_path, dtype="float64", mode="r", shape=(row_count,))
         price_statistics = self._numeric_summary(values)
         q1, q3 = price_statistics["q1"], price_statistics["q3"]
         lower, upper = q1 - DEFAULT_IQR_THRESHOLD * (q3 - q1), q3 + DEFAULT_IQR_THRESHOLD * (q3 - q1)
