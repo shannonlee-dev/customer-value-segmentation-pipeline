@@ -48,6 +48,23 @@ class NotebookContractTest(unittest.TestCase):
 
         self.assertEqual(summary["status"], "PASS")
 
+    def test_every_notebook_bootstraps_the_project_only_on_kaggle(self) -> None:
+        """Catch a missing Kaggle clone fallback or accidental local auto-clone."""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            notebooks = (
+                nbformat.read(build_notebook(root / "analysis_report.ipynb"), as_version=4),
+                nbformat.read(build_precomputed_notebook(root / "precomputed_report.ipynb"), as_version=4),
+            )
+
+        for notebook in notebooks:
+            setup = notebook.cells[0].source
+            self.assertIn("https://github.com/shannonlee-dev/customer-value-segmentation-pipeline.git", setup)
+            self.assertIn('Path("/kaggle/working/customer-value-segmentation-pipeline")', setup)
+            self.assertIn("subprocess.run", setup)
+            self.assertIn("로컬에서는 자동으로 저장소를 clone하지 않습니다", setup)
+            self.assertNotIn('rglob("customer-value-segmentation-pipeline/src/pipeline.py")', setup)
+
     def test_precomputed_notebook_keeps_the_main_notebook_layout(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

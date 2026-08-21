@@ -6,27 +6,59 @@ import nbformat
 from nbformat.v4 import new_code_cell, new_markdown_cell, new_notebook
 
 
-def build_notebook(path: Path = Path("notebooks/analysis_report.ipynb")) -> Path:
-    cells = [
-        new_code_cell("""import os
+PROJECT_BOOTSTRAP_SOURCE = """import os
+import subprocess
 from pathlib import Path
+
+REPOSITORY_URL = "https://github.com/shannonlee-dev/customer-value-segmentation-pipeline.git"
+KAGGLE_PROJECT_ROOT = Path("/kaggle/working/customer-value-segmentation-pipeline")
+
+def is_project_root(path):
+    return (path / "src" / "pipeline.py").is_file()
 
 def find_project_root():
     candidates = [Path.cwd(), *Path.cwd().parents]
     if os.environ.get("PROJECT_ROOT"):
         candidates.append(Path(os.environ["PROJECT_ROOT"]))
-    candidates.append(Path("/kaggle/working/customer-value-segmentation-pipeline"))
     for candidate in candidates:
-        if (candidate / "src" / "pipeline.py").is_file():
+        if is_project_root(candidate):
             return candidate.resolve()
-    kaggle_sources = list(Path("/kaggle/input").rglob("customer-value-segmentation-pipeline/src/pipeline.py"))
-    if len(kaggle_sources) == 1:
-        return kaggle_sources[0].parent.parent
-    raise RuntimeError("프로젝트 소스를 찾지 못했습니다. PROJECT_ROOT를 설정하거나 저장소를 연결하세요.")
+
+    if not Path("/kaggle").is_dir():
+        raise RuntimeError(
+            "프로젝트 소스를 찾지 못했습니다. 로컬에서는 자동으로 저장소를 clone하지 않습니다. "
+            "PROJECT_ROOT를 설정하거나 저장소 루트에서 노트북을 실행하세요."
+        )
+
+    if KAGGLE_PROJECT_ROOT.exists():
+        raise RuntimeError(
+            f"Kaggle 프로젝트 경로가 이미 있지만 소스가 완전하지 않습니다: {KAGGLE_PROJECT_ROOT}. "
+            "해당 폴더를 정리한 뒤 다시 실행하세요."
+        )
+
+    print("Kaggle 환경: 프로젝트 소스를 내려받습니다.")
+    try:
+        subprocess.run(
+            ["git", "clone", "--depth", "1", REPOSITORY_URL, str(KAGGLE_PROJECT_ROOT)],
+            check=True,
+        )
+    except (OSError, subprocess.CalledProcessError) as error:
+        raise RuntimeError(
+            "Kaggle에서 프로젝트를 내려받지 못했습니다. Notebook Settings에서 Internet을 켠 뒤 다시 실행하세요."
+        ) from error
+
+    if not is_project_root(KAGGLE_PROJECT_ROOT):
+        raise RuntimeError(f"clone 뒤에도 프로젝트 소스를 찾지 못했습니다: {KAGGLE_PROJECT_ROOT}")
+    return KAGGLE_PROJECT_ROOT.resolve()
 
 PROJECT_ROOT = find_project_root()
 os.environ.setdefault("PROJECT_ROOT", str(PROJECT_ROOT))
+"""
 
+
+def build_notebook(path: Path = Path("notebooks/analysis_report.ipynb")) -> Path:
+    cells = [
+        new_code_cell(PROJECT_BOOTSTRAP_SOURCE + """
 precomputed = os.environ.get("HM_PRECOMPUTED_DIR")
 if precomputed:
     print("사전 계산 루트:", Path(precomputed).expanduser().resolve())

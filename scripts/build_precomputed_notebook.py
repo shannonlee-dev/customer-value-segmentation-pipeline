@@ -9,7 +9,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from scripts.build_notebook import build_notebook as build_analysis_notebook
+from scripts.build_notebook import PROJECT_BOOTSTRAP_SOURCE, build_notebook as build_analysis_notebook
 
 
 def build_notebook(path: Path = Path("notebooks/precomputed_report.ipynb")) -> Path:
@@ -17,8 +17,7 @@ def build_notebook(path: Path = Path("notebooks/precomputed_report.ipynb")) -> P
     build_analysis_notebook(path)
     notebook = nbformat.read(path, as_version=4)
 
-    notebook.cells[0].source = """import os
-from pathlib import Path
+    notebook.cells[0].source = PROJECT_BOOTSTRAP_SOURCE + """
 
 INPUT_ROOT = Path("/kaggle/input")
 summary_files = sorted(INPUT_ROOT.rglob("aggregates/eda_summary.json"))
