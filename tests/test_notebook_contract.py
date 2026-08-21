@@ -55,3 +55,5 @@ class NotebookContractTest(unittest.TestCase):
         )
         self.assertIn("aggregates/eda_summary.json", code)
         self.assertNotIn("DataAnalyzer", code)
+        self.assertNotIn("src.reporting", code)
+        self.assertNotIn("customer-value-segmentation-pipeline/src", code)
