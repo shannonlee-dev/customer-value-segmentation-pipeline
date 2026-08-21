@@ -22,12 +22,12 @@ CUSTOMERS_CACHE_FILENAME = "customers.csv"
 ARTICLES_CACHE_FILENAME = "articles.csv"
 IMAGE_FEATURES_CACHE_FILENAME = "product_images.csv"
 RFM_OUTPUT_FILENAME = "rfm.csv"
-IQR_OUTPUT_FILENAME = "iqr_{column}.json"
+IQR_OUTPUT_FILENAME_TEMPLATE = "iqr_{column}.json"
 EDA_SUMMARY_FILENAME = "eda_summary.json"
 MONTHLY_SUMMARY_FILENAME = "monthly_summary.csv"
 EDA_HISTOGRAM_BIN_COUNT = 40
 RFM_PARTITIONS_DIRECTORY = "rfm_partitions"
-RFM_PARTITION_FILENAME = "part_{index:02d}.csv"
+RFM_PARTITION_FILENAME_TEMPLATE = "part_{index:02d}.csv"
 
 # H&M source schema and normalized schema
 RAW_TRANSACTIONS_FILENAME = "transactions_train.csv"
@@ -41,10 +41,10 @@ UNIT_PRICE_COLUMN = "unit_price"
 SALES_CHANNEL_COLUMN = "sales_channel_id"
 RAW_DATE_COLUMN = "t_dat"
 RAW_PRICE_COLUMN = "price"
-RAW_TRANSACTION_COLUMNS = (RAW_DATE_COLUMN, CUSTOMER_ID_COLUMN, RAW_ARTICLE_ID_COLUMN, RAW_PRICE_COLUMN, SALES_CHANNEL_COLUMN)
+RAW_TRANSACTION_REQUIRED_COLUMNS = (RAW_DATE_COLUMN, CUSTOMER_ID_COLUMN, RAW_ARTICLE_ID_COLUMN, RAW_PRICE_COLUMN, SALES_CHANNEL_COLUMN)
 RAW_TRANSACTION_DTYPES = {CUSTOMER_ID_COLUMN: STRING_DTYPE, RAW_ARTICLE_ID_COLUMN: STRING_DTYPE}
 CUSTOMER_AGE_COLUMN = "age"
-AGE_RAW_COLUMN = "age_raw"
+ORIGINAL_AGE_COLUMN = "age_raw"
 AGE_WAS_MISSING_COLUMN = "age_was_missing"
 CUSTOMER_MEMBERSHIP_COLUMN = "club_member_status"
 FASHION_NEWS_COLUMN = "fashion_news_frequency"
@@ -57,8 +57,8 @@ IMAGE_PATH_COLUMN = "image_path"
 IMAGE_STATUS_COLUMN = "image_status"
 IMAGE_MEAN_COLUMN = "image_mean"
 IMAGE_STD_COLUMN = "image_std"
-CUSTOMER_REQUIRED_COLUMNS = (CUSTOMER_ID_COLUMN, CUSTOMER_AGE_COLUMN, CUSTOMER_MEMBERSHIP_COLUMN, FASHION_NEWS_COLUMN)
-ARTICLE_REQUIRED_COLUMNS = (RAW_ARTICLE_ID_COLUMN, RAW_PRODUCT_NAME_COLUMN, RAW_CATEGORY_COLUMN)
+RAW_CUSTOMER_REQUIRED_COLUMNS = (CUSTOMER_ID_COLUMN, CUSTOMER_AGE_COLUMN, CUSTOMER_MEMBERSHIP_COLUMN, FASHION_NEWS_COLUMN)
+RAW_ARTICLE_REQUIRED_COLUMNS = (RAW_ARTICLE_ID_COLUMN, RAW_PRODUCT_NAME_COLUMN, RAW_CATEGORY_COLUMN)
 TRANSACTION_RENAMES = {RAW_DATE_COLUMN: ORDER_DATE_COLUMN, RAW_ARTICLE_ID_COLUMN: PRODUCT_ID_COLUMN, RAW_PRICE_COLUMN: UNIT_PRICE_COLUMN}
 ARTICLE_RENAMES = {RAW_ARTICLE_ID_COLUMN: PRODUCT_ID_COLUMN, RAW_PRODUCT_NAME_COLUMN: PRODUCT_NAME_COLUMN, RAW_CATEGORY_COLUMN: CATEGORY_COLUMN}
 
@@ -67,7 +67,7 @@ DEFAULT_MISSING_VALUE_STRATEGY = "median"
 SUPPORTED_MISSING_VALUE_STRATEGIES = ("median", "mean")
 IMAGE_DIRECTORY = "images"
 IMAGE_FILE_EXTENSION = ".jpg"
-IMAGE_CHANNEL_COUNT = 3
+IMAGE_RGB_CHANNEL_COUNT = 3
 IMAGE_STATUS_OK = "ok"
 IMAGE_STATUS_MISSING = "missing"
 IMAGE_STATUS_DECODE_ERROR = "decode_error"
@@ -77,19 +77,19 @@ DEFAULT_OUTLIER_COLUMN = UNIT_PRICE_COLUMN
 DEFAULT_IQR_THRESHOLD = 1.5
 IQR_QUANTILES = (0.25, 0.75)
 MEMMAP_DTYPE = "float64"
-IQR_CACHE_EXTENSION = ".dat"
+IQR_MEMMAP_EXTENSION = ".dat"
 
 # RFM policies
 DEFAULT_RFM_CUSTOMER_COLUMN = CUSTOMER_ID_COLUMN
 DEFAULT_RFM_DATE_COLUMN = ORDER_DATE_COLUMN
 DEFAULT_RFM_AMOUNT_COLUMN = UNIT_PRICE_COLUMN
 DEFAULT_RFM_PARTITION_COUNT = 64
-RFM_REFERENCE_DAY_OFFSET = 1
+RFM_REFERENCE_OFFSET_DAYS = 1
 RFM_SCORE_QUANTILE_COUNT = 4
 RFM_SCORE_LABELS = (1, 2, 3, 4)
-RFM_HIGH_SCORE = 3
+RFM_HIGH_SCORE_MIN = 3
 RFM_BEST_SCORE = 4
-RFM_LOW_SCORE = 2
+RFM_LOW_SCORE_MAX = 2
 RFM_SEGMENT_COLUMN = "segment"
 RFM_RECENCY_COLUMN = "recency"
 RFM_FREQUENCY_COLUMN = "frequency"
@@ -104,10 +104,10 @@ RFM_SEGMENT_CHURNED = "Churned"
 RFM_SEGMENT_POTENTIAL = "Potential"
 
 # Reusable artifact schema contracts
-TRANSACTION_REQUIRED_COLUMNS = (CUSTOMER_ID_COLUMN, PRODUCT_ID_COLUMN, ORDER_DATE_COLUMN, UNIT_PRICE_COLUMN, SALES_CHANNEL_COLUMN)
+TRANSACTION_NORMALIZED_REQUIRED_COLUMNS = (CUSTOMER_ID_COLUMN, PRODUCT_ID_COLUMN, ORDER_DATE_COLUMN, UNIT_PRICE_COLUMN, SALES_CHANNEL_COLUMN)
 CUSTOMER_NORMALIZED_REQUIRED_COLUMNS = (CUSTOMER_ID_COLUMN, CUSTOMER_AGE_COLUMN, CUSTOMER_MEMBERSHIP_COLUMN, FASHION_NEWS_COLUMN)
-ARTICLE_NORMALIZED_REQUIRED_COLUMNS = (PRODUCT_ID_COLUMN, PRODUCT_NAME_COLUMN, CATEGORY_COLUMN, PRODUCT_NAME_LENGTH_COLUMN, IMAGE_PATH_COLUMN)
-IMAGE_FEATURE_REQUIRED_COLUMNS = (PRODUCT_ID_COLUMN, IMAGE_PATH_COLUMN, IMAGE_STATUS_COLUMN, IMAGE_MEAN_COLUMN, IMAGE_STD_COLUMN)
+ARTICLE_NORMALIZED_REQUIRED_COLUMNS = (PRODUCT_ID_COLUMN, PRODUCT_NAME_COLUMN, CATEGORY_COLUMN, IMAGE_PATH_COLUMN)
+IMAGE_FEATURE_REQUIRED_COLUMNS = (PRODUCT_ID_COLUMN, IMAGE_PATH_COLUMN, PRODUCT_NAME_LENGTH_COLUMN, IMAGE_STATUS_COLUMN, IMAGE_MEAN_COLUMN, IMAGE_STD_COLUMN)
 RFM_REQUIRED_COLUMNS = (
     CUSTOMER_ID_COLUMN,
     RFM_RECENCY_COLUMN,
@@ -143,86 +143,12 @@ class DataAnalyzer:
 
     def load_data(self, *, force: bool = False) -> dict[str, int]:
         """Cache every source row as normalized CSV files; never sample analysis data."""
-        raw = self.context.raw_data_root
-        if force:
-            self.transactions_path = self.runtime_transactions_path
-            self.customers_path = self.runtime_customers_path
-            self.articles_path = self.runtime_articles_path
-        transaction_source = None if force else self._find_reusable_csv(
-            "transactions", self.runtime_transactions_path, TRANSACTIONS_CACHE_FILENAME, TRANSACTION_REQUIRED_COLUMNS
-        )
-        customer_source = None if force else self._find_reusable_csv(
-            "customers", self.runtime_customers_path, CUSTOMERS_CACHE_FILENAME, CUSTOMER_NORMALIZED_REQUIRED_COLUMNS
-        )
-        article_source = None if force else self._find_reusable_csv(
-            "articles", self.runtime_articles_path, ARTICLES_CACHE_FILENAME, ARTICLE_NORMALIZED_REQUIRED_COLUMNS
-        )
+        self._prepare_customers(force=force)
+        self._prepare_articles(force=force)
+        transaction_rows = self._prepare_transactions(force=force)
+        return self._load_summary(transaction_rows)
 
-        if customer_source is not None:
-            self.customers_path = customer_source
-            self.customers = pd.read_csv(customer_source, dtype={CUSTOMER_ID_COLUMN: STRING_DTYPE})
-        else:
-            raw = self._require_raw_data_root()
-            customers = pd.read_csv(raw / RAW_CUSTOMERS_FILENAME, dtype={CUSTOMER_ID_COLUMN: STRING_DTYPE})
-            self._require(customers, CUSTOMER_REQUIRED_COLUMNS)
-            self._validate_dimension_keys(customers, CUSTOMER_ID_COLUMN, RAW_CUSTOMERS_FILENAME)
-            self.customers = customers.rename(columns={CUSTOMER_AGE_COLUMN: AGE_RAW_COLUMN})
-            self.handle_missing_values(AGE_RAW_COLUMN, CUSTOMER_MEMBERSHIP_COLUMN)
-            self.customers_path = self.runtime_customers_path
-            self.customers.to_csv(self.customers_path, index=False)
-            self._record_status("customers", "COMPUTED", self.customers_path)
 
-        if article_source is not None:
-            self.articles_path = article_source
-            self.articles = pd.read_csv(article_source, dtype={PRODUCT_ID_COLUMN: STRING_DTYPE})
-        else:
-            raw = self._require_raw_data_root()
-            articles = pd.read_csv(raw / RAW_ARTICLES_FILENAME, dtype={RAW_ARTICLE_ID_COLUMN: STRING_DTYPE})
-            self._require(articles, ARTICLE_REQUIRED_COLUMNS)
-            self._validate_dimension_keys(articles, RAW_ARTICLE_ID_COLUMN, RAW_ARTICLES_FILENAME)
-            self.articles = articles.rename(columns=ARTICLE_RENAMES)
-            self.articles[PRODUCT_NAME_LENGTH_COLUMN] = self.articles[PRODUCT_NAME_COLUMN].astype(STRING_DTYPE).str.len()
-            self.articles[IMAGE_PATH_COLUMN] = self.articles[PRODUCT_ID_COLUMN].map(
-                lambda value: f"{IMAGE_DIRECTORY}/{value[:3]}/{value}{IMAGE_FILE_EXTENSION}"
-            )
-            self.articles_path = self.runtime_articles_path
-            self.articles.to_csv(self.articles_path, index=False)
-            self._record_status("articles", "COMPUTED", self.articles_path)
-
-        if transaction_source is not None:
-            self.transactions_path = transaction_source
-            transaction_rows = self._csv_row_count(transaction_source)
-            return self._load_summary(transaction_rows)
-
-        raw = self._require_raw_data_root()
-        total_rows, first_chunk = 0, True
-        for chunk in pd.read_csv(
-            raw / RAW_TRANSACTIONS_FILENAME,
-            usecols=RAW_TRANSACTION_COLUMNS,
-            dtype=RAW_TRANSACTION_DTYPES,
-            chunksize=self.chunksize,
-        ):
-            self._require(chunk, RAW_TRANSACTION_COLUMNS)
-            if chunk[[CUSTOMER_ID_COLUMN, RAW_ARTICLE_ID_COLUMN]].isna().any().any():
-                raise ValueError("transactions_train.csv contains missing identifiers")
-            if not chunk[CUSTOMER_ID_COLUMN].isin(self.customers[CUSTOMER_ID_COLUMN]).all():
-                raise ValueError("transactions_train.csv references an unknown customer")
-            if not chunk[RAW_ARTICLE_ID_COLUMN].isin(self.articles[PRODUCT_ID_COLUMN]).all():
-                raise ValueError("transactions_train.csv references an unknown article")
-            frame = chunk.rename(columns=TRANSACTION_RENAMES)
-            frame[ORDER_DATE_COLUMN] = pd.to_datetime(frame[ORDER_DATE_COLUMN], errors=STRICT_PARSING_ERRORS)
-            frame[UNIT_PRICE_COLUMN] = pd.to_numeric(frame[UNIT_PRICE_COLUMN], errors=STRICT_PARSING_ERRORS)
-            frame.to_csv(
-                self.runtime_transactions_path,
-                mode=CSV_WRITE_MODE if first_chunk else CSV_APPEND_MODE,
-                header=first_chunk,
-                index=False,
-            )
-            first_chunk = False
-            total_rows += len(frame)
-        self.transactions_path = self.runtime_transactions_path
-        self._record_status("transactions", "COMPUTED", self.transactions_path)
-        return self._load_summary(total_rows)
 
     def handle_missing_values(
         self,
@@ -246,7 +172,7 @@ class DataAnalyzer:
         }
 
     def engineer_features(self, *, force: bool = False) -> pd.DataFrame:
-        """Reuse cached image features or calculate full-array NumPy Mean/Std once."""
+        """Reuse cached product features or calculate text and image features once."""
         source = None if force else self._find_reusable_csv(
             "image features", self.runtime_images_path, IMAGE_FEATURES_CACHE_FILENAME, IMAGE_FEATURE_REQUIRED_COLUMNS
         )
@@ -256,11 +182,12 @@ class DataAnalyzer:
         if self.articles is None:
             self.articles = pd.read_csv(self.articles_path, dtype={PRODUCT_ID_COLUMN: STRING_DTYPE})
         records: list[dict[str, object]] = []
-        for product_id, image_path in self.articles[[PRODUCT_ID_COLUMN, IMAGE_PATH_COLUMN]].itertuples(index=False):
+        for product_id, product_name, image_path in self.articles[[PRODUCT_ID_COLUMN, PRODUCT_NAME_COLUMN, IMAGE_PATH_COLUMN]].itertuples(index=False):
             path = self.context.raw_data_root / image_path
             record: dict[str, object] = {
                 PRODUCT_ID_COLUMN: product_id,
                 IMAGE_PATH_COLUMN: image_path,
+                PRODUCT_NAME_LENGTH_COLUMN: len(str(product_name)) if pd.notna(product_name) else np.nan,
                 IMAGE_STATUS_COLUMN: IMAGE_STATUS_OK,
                 IMAGE_MEAN_COLUMN: np.nan,
                 IMAGE_STD_COLUMN: np.nan,
@@ -272,7 +199,7 @@ class DataAnalyzer:
                     pixels = np.asarray(mpimg.imread(path))
                     if pixels.ndim == 2:
                         pixels = pixels[..., np.newaxis]
-                    pixels = pixels[..., :IMAGE_CHANNEL_COUNT]
+                    pixels = pixels[..., :IMAGE_RGB_CHANNEL_COUNT]
                     record[IMAGE_MEAN_COLUMN] = float(np.mean(pixels))
                     record[IMAGE_STD_COLUMN] = float(np.std(pixels))
                 except (OSError, ValueError, SyntaxError):
@@ -292,7 +219,7 @@ class DataAnalyzer:
         force: bool = False,
     ) -> dict[str, float | int]:
         """Calculate exact full-data IQR fences and counts with a disk-backed NumPy array."""
-        iqr_filename = IQR_OUTPUT_FILENAME.format(column=column)
+        iqr_filename = IQR_OUTPUT_FILENAME_TEMPLATE.format(column=column)
         if not force:
             cached = self._find_reusable_json("IQR", self.context.aggregate_root / iqr_filename, iqr_filename)
             if cached is not None:
@@ -301,7 +228,7 @@ class DataAnalyzer:
                     return {key: result[key] for key in ("q1", "q3", "lower_fence", "upper_fence", "outlier_count")}
                 self._record_rejection("IQR", cached, "parameters do not match")
         row_count = sum(len(chunk) for chunk in pd.read_csv(self.transactions_path, usecols=[column], chunksize=self.chunksize))
-        cache_path = self.context.aggregate_root / f"{column}_values{IQR_CACHE_EXTENSION}"
+        cache_path = self.context.aggregate_root / f"{column}_values{IQR_MEMMAP_EXTENSION}"
         values = np.memmap(cache_path, dtype=MEMMAP_DTYPE, mode=MEMMAP_WRITE_MODE, shape=(row_count,))
         offset = 0
         for chunk in pd.read_csv(self.transactions_path, usecols=[column], chunksize=self.chunksize):
@@ -338,7 +265,7 @@ class DataAnalyzer:
         partition_root = self.context.aggregate_root / RFM_PARTITIONS_DIRECTORY
         partition_root.mkdir(exist_ok=True)
         paths = [
-            partition_root / RFM_PARTITION_FILENAME.format(index=index)
+            partition_root / RFM_PARTITION_FILENAME_TEMPLATE.format(index=index)
             for index in range(partition_count)
         ]
         for path in paths:
@@ -366,7 +293,7 @@ class DataAnalyzer:
         reference = (
             pd.Timestamp(analysis_date)
             if analysis_date is not None
-            else pd.Timestamp(max_date.date()) + pd.offsets.Day(RFM_REFERENCE_DAY_OFFSET)
+            else pd.Timestamp(max_date.date()) + pd.offsets.Day(RFM_REFERENCE_OFFSET_DAYS)
         )
         aggregates: list[pd.DataFrame] = []
         for path in paths:
@@ -402,10 +329,10 @@ class DataAnalyzer:
         rfm[RFM_SEGMENT_COLUMN] = np.select(
             [
                 (rfm[score_columns] == RFM_BEST_SCORE).all(axis=1),
-                (rfm[RFM_RECENCY_SCORE_COLUMN] >= RFM_HIGH_SCORE)
-                & (rfm[RFM_FREQUENCY_SCORE_COLUMN] >= RFM_HIGH_SCORE),
+                (rfm[RFM_RECENCY_SCORE_COLUMN] >= RFM_HIGH_SCORE_MIN)
+                & (rfm[RFM_FREQUENCY_SCORE_COLUMN] >= RFM_HIGH_SCORE_MIN),
                 (rfm[RFM_RECENCY_SCORE_COLUMN] == RFM_BEST_SCORE)
-                & (rfm[RFM_FREQUENCY_SCORE_COLUMN] <= RFM_LOW_SCORE),
+                & (rfm[RFM_FREQUENCY_SCORE_COLUMN] <= RFM_LOW_SCORE_MAX),
                 rfm[RFM_RECENCY_SCORE_COLUMN] == RFM_SCORE_LABELS[0],
             ],
             [RFM_SEGMENT_VIP, RFM_SEGMENT_LOYAL, RFM_SEGMENT_NEW, RFM_SEGMENT_CHURNED],
@@ -435,7 +362,7 @@ class DataAnalyzer:
                 self._record_rejection("EDA", summary_path, "missing required summary fields")
 
         row_count = self._csv_row_count(self.transactions_path)
-        values_path = self.context.aggregate_root / f"{DEFAULT_OUTLIER_COLUMN}_values{IQR_CACHE_EXTENSION}"
+        values_path = self.context.aggregate_root / f"{DEFAULT_OUTLIER_COLUMN}_values{IQR_MEMMAP_EXTENSION}"
         if not values_path.is_file() or values_path.stat().st_size != row_count * np.dtype(MEMMAP_DTYPE).itemsize:
             values = np.memmap(values_path, dtype=MEMMAP_DTYPE, mode=MEMMAP_WRITE_MODE, shape=(row_count,))
             offset = 0
@@ -472,10 +399,7 @@ class DataAnalyzer:
         price_age_correlation = 0.0 if denominator == 0 else float((count * sum_xy - sum_x * sum_y) / denominator)
 
         images = self.engineer_features(force=force)
-        if self.articles is None:
-            self.articles = pd.read_csv(self.articles_path, dtype={PRODUCT_ID_COLUMN: STRING_DTYPE})
-        product_features = images.merge(self.articles[[PRODUCT_ID_COLUMN, PRODUCT_NAME_LENGTH_COLUMN]], on=PRODUCT_ID_COLUMN, how="left")
-        image_text_correlation = float(product_features[[IMAGE_MEAN_COLUMN, PRODUCT_NAME_LENGTH_COLUMN]].corr().iloc[0, 1])
+        image_text_correlation = float(images[[IMAGE_MEAN_COLUMN, PRODUCT_NAME_LENGTH_COLUMN]].corr().iloc[0, 1])
         histogram_counts, histogram_edges = np.histogram(values, bins=EDA_HISTOGRAM_BIN_COUNT)
         summary = {
             "price_statistics": price_statistics,
@@ -603,3 +527,81 @@ class DataAnalyzer:
     def _validate_dimension_keys(frame: pd.DataFrame, column: str, filename: str) -> None:
         if frame[column].isna().any() or frame[column].duplicated().any():
             raise ValueError(f"{filename} has missing or duplicate {column} values")
+
+    def _prepare_customers(self, *, force: bool) -> None:
+            source = None if force else self._find_reusable_csv(
+                "customers", self.runtime_customers_path, CUSTOMERS_CACHE_FILENAME, CUSTOMER_NORMALIZED_REQUIRED_COLUMNS
+            )
+            if source is not None:
+                self.customers_path = source
+                self.customers = pd.read_csv(source, dtype={CUSTOMER_ID_COLUMN: STRING_DTYPE})
+                return
+
+            raw = self._require_raw_data_root()
+            customers = pd.read_csv(raw / RAW_CUSTOMERS_FILENAME, dtype={CUSTOMER_ID_COLUMN: STRING_DTYPE})
+            self._require(customers, RAW_CUSTOMER_REQUIRED_COLUMNS)
+            self._validate_dimension_keys(customers, CUSTOMER_ID_COLUMN, RAW_CUSTOMERS_FILENAME)
+            self.customers = customers.rename(columns={CUSTOMER_AGE_COLUMN: ORIGINAL_AGE_COLUMN})
+            self.handle_missing_values(ORIGINAL_AGE_COLUMN, CUSTOMER_MEMBERSHIP_COLUMN)
+            self.customers_path = self.runtime_customers_path
+            self.customers.to_csv(self.customers_path, index=False)
+            self._record_status("customers", "COMPUTED", self.customers_path)
+
+    def _prepare_articles(self, *, force: bool) -> None:
+        source = None if force else self._find_reusable_csv(
+            "articles", self.runtime_articles_path, ARTICLES_CACHE_FILENAME, ARTICLE_NORMALIZED_REQUIRED_COLUMNS
+        )
+        if source is not None:
+            self.articles_path = source
+            self.articles = pd.read_csv(source, dtype={PRODUCT_ID_COLUMN: STRING_DTYPE})
+            return
+
+        raw = self._require_raw_data_root()
+        articles = pd.read_csv(raw / RAW_ARTICLES_FILENAME, dtype={RAW_ARTICLE_ID_COLUMN: STRING_DTYPE})
+        self._require(articles, RAW_ARTICLE_REQUIRED_COLUMNS)
+        self._validate_dimension_keys(articles, RAW_ARTICLE_ID_COLUMN, RAW_ARTICLES_FILENAME)
+        self.articles = articles.rename(columns=ARTICLE_RENAMES)
+        self.articles[IMAGE_PATH_COLUMN] = self.articles[PRODUCT_ID_COLUMN].map(
+            lambda value: f"{IMAGE_DIRECTORY}/{value[:3]}/{value}{IMAGE_FILE_EXTENSION}"
+        )
+        self.articles_path = self.runtime_articles_path
+        self.articles.to_csv(self.articles_path, index=False)
+        self._record_status("articles", "COMPUTED", self.articles_path)
+
+    def _prepare_transactions(self, *, force: bool) -> int:
+        source = None if force else self._find_reusable_csv(
+            "transactions", self.runtime_transactions_path, TRANSACTIONS_CACHE_FILENAME, TRANSACTION_NORMALIZED_REQUIRED_COLUMNS
+        )
+        if source is not None:
+            self.transactions_path = source
+            return self._csv_row_count(source)
+
+        raw = self._require_raw_data_root()
+        total_rows, first_chunk = 0, True
+        for chunk in pd.read_csv(
+            raw / RAW_TRANSACTIONS_FILENAME,
+            usecols=RAW_TRANSACTION_REQUIRED_COLUMNS,
+            dtype=RAW_TRANSACTION_DTYPES,
+            chunksize=self.chunksize,
+        ):
+            self._require(chunk, RAW_TRANSACTION_REQUIRED_COLUMNS)
+            if chunk[[CUSTOMER_ID_COLUMN, RAW_ARTICLE_ID_COLUMN]].isna().any().any():
+                raise ValueError("transactions_train.csv contains missing identifiers")
+            if not chunk[CUSTOMER_ID_COLUMN].isin(self.customers[CUSTOMER_ID_COLUMN]).all():
+                raise ValueError("transactions_train.csv references an unknown customer")
+            if not chunk[RAW_ARTICLE_ID_COLUMN].isin(self.articles[PRODUCT_ID_COLUMN]).all():
+                raise ValueError("transactions_train.csv references an unknown article")
+            frame = chunk.rename(columns=TRANSACTION_RENAMES)
+            frame[ORDER_DATE_COLUMN] = pd.to_datetime(frame[ORDER_DATE_COLUMN], errors=STRICT_PARSING_ERRORS)
+            frame[UNIT_PRICE_COLUMN] = pd.to_numeric(frame[UNIT_PRICE_COLUMN], errors=STRICT_PARSING_ERRORS)
+            frame.to_csv(
+                self.runtime_transactions_path,
+                mode=CSV_WRITE_MODE if first_chunk else CSV_APPEND_MODE,
+                header=first_chunk,
+                index=False,
+            )
+            first_chunk = False
+            total_rows += len(frame)
+        self.transactions_path = self.runtime_transactions_path
+        self._record_status("transactions", "COMPUTED", self.transactions_path)
+        return total_rows
