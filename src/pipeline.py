@@ -8,6 +8,7 @@ import pandas as pd
 from matplotlib import image as mpimg
 
 from .runtime import RuntimeContext
+from .statistics import summarize_numeric
 
 
 # Runtime and cache defaults
@@ -480,7 +481,7 @@ class DataAnalyzer:
 
         values_path, row_count = self._materialize_numeric_column(DEFAULT_OUTLIER_COLUMN)
         values = np.memmap(values_path, dtype="float64", mode="r", shape=(row_count,))
-        price_statistics = self._numeric_summary(values)
+        price_statistics = summarize_numeric(values)
         q1, q3 = price_statistics["q1"], price_statistics["q3"]
         lower, upper = q1 - DEFAULT_IQR_THRESHOLD * (q3 - q1), q3 + DEFAULT_IQR_THRESHOLD * (q3 - q1)
         inliers = values[(values >= lower) & (values <= upper)]
@@ -587,15 +588,6 @@ class DataAnalyzer:
         output_path.write_text(json.dumps(result, indent=2), encoding="utf-8")
         self._record_status("IQR", "COMPUTED", output_path)
         return {key: result[key] for key in IQR_STATISTIC_KEYS}
-
-    @staticmethod
-    def _numeric_summary(values: np.ndarray) -> dict[str, float | int]:
-        q1, median, q3 = np.quantile(values, [0.25, 0.50, 0.75])
-        return {
-            "count": int(values.size), "mean": float(np.mean(values)), "median": float(median),
-            "std": float(np.std(values, ddof=1)) if values.size > 1 else 0.0,
-            "q1": float(q1), "q3": float(q3), "min": float(np.min(values)), "max": float(np.max(values)),
-        }
 
     @staticmethod
     def _boxplot_statistics(values: np.ndarray, label: str) -> dict[str, float | str]:

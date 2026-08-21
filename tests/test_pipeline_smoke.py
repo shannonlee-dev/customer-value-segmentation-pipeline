@@ -3,6 +3,7 @@
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 import numpy as np
 import pandas as pd
@@ -52,6 +53,35 @@ class PipelineSmokeTest(unittest.TestCase):
                 "outlier_count": 1,
             },
         )
+
+    def test_prepare_eda_artifacts_uses_shared_numeric_summary(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            raw = root / "raw"
+            raw.mkdir()
+            write_fixture(raw)
+            context = discover_runtime(
+                Path.cwd(),
+                {"HM_RAW_DATA_DIR": str(raw), "HM_RUNTIME_DIR": str(root / "runtime")},
+            )
+            analyzer = DataAnalyzer(context, chunksize=2)
+            analyzer.load_data()
+            analyzer.engineer_features()
+            shared_summary = {
+                "count": 4,
+                "mean": 0.275,
+                "median": 0.25,
+                "std": 0.17078251276599332,
+                "q1": 0.175,
+                "q3": 0.35,
+                "min": 0.1,
+                "max": 0.5,
+            }
+
+            with patch("src.pipeline.summarize_numeric", return_value=shared_summary):
+                result = analyzer.prepare_eda_artifacts(force=True)
+
+            self.assertEqual(result["price_statistics"], shared_summary)
 
     def test_boxplot_statistics_uses_observed_tukey_whiskers(self) -> None:
         result = DataAnalyzer._boxplot_statistics(np.array([1, 2, 3, 4, 100]), "Price")
