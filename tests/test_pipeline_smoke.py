@@ -53,6 +53,75 @@ class PipelineSmokeTest(unittest.TestCase):
             },
         )
 
+    def test_boxplot_statistics_uses_observed_tukey_whiskers(self) -> None:
+        result = DataAnalyzer._boxplot_statistics(np.array([1, 2, 3, 4, 100]), "Price")
+
+        self.assertEqual(result["whislo"], 1.0)
+        self.assertEqual(result["whishi"], 4.0)
+
+    def test_partition_transactions_keeps_each_customer_in_one_partition(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            raw = root / "raw"
+            raw.mkdir()
+            write_fixture(raw)
+            context = discover_runtime(
+                Path.cwd(),
+                {"HM_RAW_DATA_DIR": str(raw), "HM_RUNTIME_DIR": str(root / "runtime")},
+            )
+            analyzer = DataAnalyzer(context, chunksize=2)
+            pd.DataFrame(
+                {
+                    "customer_id": ["customer-a", "customer-b", "customer-a", "customer-c"],
+                    "order_date": ["2020-01-01", "2020-01-02", "2020-01-03", "2020-01-04"],
+                    "unit_price": [10, 20, 30, 40],
+                }
+            ).to_csv(analyzer.transactions_path, index=False)
+
+            paths, _ = analyzer._partition_transactions("customer_id", "order_date", "unit_price", 3)
+
+            partitions_with_customer = [
+                path
+                for path in paths
+                if path.is_file() and "customer-a" in pd.read_csv(path)["customer_id"].tolist()
+            ]
+            self.assertEqual(len(partitions_with_customer), 1)
+
+    def test_aggregate_rfm_partition_calculates_customer_metrics(self) -> None:
+        frame = pd.DataFrame(
+            {
+                "customer_id": ["A", "A", "A"],
+                "order_date": ["2020-01-01", "2020-01-01", "2020-01-10"],
+                "unit_price": [10, 20, 30],
+            }
+        )
+
+        result = DataAnalyzer._aggregate_rfm_partition(
+            frame,
+            "customer_id",
+            "order_date",
+            "unit_price",
+            pd.Timestamp("2020-01-11"),
+        )
+
+        self.assertEqual(result.loc[0, "recency"], 1)
+        self.assertEqual(result.loc[0, "frequency"], 2)
+        self.assertEqual(result.loc[0, "monetary"], 60)
+
+    def test_score_rfm_metric_keeps_tied_values_in_the_same_score_bucket(self) -> None:
+        single_score = DataAnalyzer._score_rfm_metric(pd.Series([10]), ascending=True)
+        tied_scores = DataAnalyzer._score_rfm_metric(pd.Series([10, 10, 20, 30]), ascending=True)
+
+        self.assertEqual(single_score.iloc[0], 4)
+        self.assertListEqual(tied_scores.tolist(), [2, 2, 3, 4])
+
+    def test_classify_segment_applies_ordered_business_rules(self) -> None:
+        self.assertEqual(DataAnalyzer.classify_segment(4, 4, 4), "VIP")
+        self.assertEqual(DataAnalyzer.classify_segment(4, 3, 1), "Loyal")
+        self.assertEqual(DataAnalyzer.classify_segment(4, 1, 2), "New")
+        self.assertEqual(DataAnalyzer.classify_segment(1, 4, 4), "Churned")
+        self.assertEqual(DataAnalyzer.classify_segment(2, 2, 2), "Potential")
+
     def test_extract_image_features_calculates_text_and_pixel_features(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -108,6 +177,15 @@ class PipelineSmokeTest(unittest.TestCase):
             self.assertIn('PRECOMPUTED_ROOT / "processed" / "transactions.csv"', setup)
             self.assertIn('"product_images.csv"', setup)
             self.assertIn('os.environ["HM_PRECOMPUTED_DIR"] = str(PRECOMPUTED_ROOT)', setup)
+
+    def test_generated_notebook_recomputes_rfm_and_eda_after_policy_changes(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            notebook = build_notebook(Path(directory) / "analysis_report.ipynb")
+            rendered = nbformat.read(notebook, as_version=4)
+            code = "\n".join(cell.source for cell in rendered.cells if cell.cell_type == "code")
+
+            self.assertIn("rfm = analyzer.calculate_rfm(force=True)", code)
+            self.assertIn("eda = analyzer.prepare_eda_artifacts(force=True)", code)
 
     def test_pipeline_generates_all_artifacts_from_a_complete_fixture(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

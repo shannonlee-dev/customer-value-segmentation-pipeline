@@ -145,8 +145,8 @@ Each image file is read with `matplotlib.image.imread`. The file loop performs I
         new_code_cell("""summary = analyzer.load_data()
 image_features = analyzer.engineer_features()
 iqr = analyzer.detect_outliers()
-rfm = analyzer.calculate_rfm()
-eda = analyzer.prepare_eda_artifacts()
+rfm = analyzer.calculate_rfm(force=True)
+eda = analyzer.prepare_eda_artifacts(force=True)
 print(analyzer.format_cache_report())
 
 transaction_schema = pd.read_csv(analyzer.transactions_path, nrows=0)
@@ -236,7 +236,7 @@ plt.show()"""),
 
 The analysis date is a parameter. Its default is the final transaction date plus one day, so the newest purchaser has a positive recency of one day. Frequency is the number of unique purchase dates, preventing multiple product rows bought on the same day from inflating purchase frequency. Monetary is the sum of the relative transaction value.
 
-R, F, and M are each divided into four rank-based quantiles. Quartiles avoid inventing currency-specific business thresholds and create comparable 1–4 scores that transfer to another dataset. Lower Recency receives a higher score; higher Frequency and Monetary receive higher scores. `rank(method="first")` makes quantile assignment deterministic when customers share the same value, although customers next to a boundary should not be treated as fundamentally different.
+R, F, and M are converted to percentile ranks and assigned to four fixed percentile intervals. This avoids currency-specific thresholds while producing comparable 1–4 scores. Lower Recency receives a higher score; higher Frequency and Monetary receive higher scores. Ties use their average percentile rank, so customers with the same raw value always receive the same score; consequently, score groups need not contain exactly the same number of customers.
 
 Rules are applied in priority order: customers with R = 4, F = 4, and M = 4 become **VIP**; customers with R >= 3 and F >= 3 become **Loyal**; very recent low-frequency customers become **New**; customers with R = 1 become **Churned**; the remainder become **Potential**. Business validity is assessed below from observed customer share, Monetary share, and mean R/F/M rather than from labels alone."""),
         new_code_cell("""segment_summary = summarize_rfm_segments(rfm)
