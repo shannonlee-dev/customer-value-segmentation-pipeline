@@ -11,6 +11,7 @@ from matplotlib import image as mpimg
 import nbformat
 
 from scripts.build_notebook import build_notebook
+from src import runtime
 from src.pipeline import DataAnalyzer, _calculate_iqr_statistics
 from src.runtime import discover_runtime
 
@@ -40,6 +41,16 @@ def write_fixture(raw: Path) -> None:
 
 
 class PipelineSmokeTest(unittest.TestCase):
+    def test_runtime_dataset_root_uses_required_dataset_files_name(self) -> None:
+        self.assertEqual(runtime.REQUIRED_DATASET_FILES, ("transactions_train.csv", "customers.csv", "articles.csv", "images"))
+
+        with tempfile.TemporaryDirectory() as directory:
+            raw = Path(directory) / "raw"
+            raw.mkdir()
+            write_fixture(raw)
+
+            self.assertTrue(runtime._is_dataset_root(raw))
+
     def test_calculate_iqr_statistics_returns_fences_and_outlier_count(self) -> None:
         result = _calculate_iqr_statistics(np.array([1, 2, 3, 4, 100]), threshold=1.5)
 
