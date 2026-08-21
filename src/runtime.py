@@ -37,12 +37,12 @@ def discover_runtime(
     """Resolve source priority and create only writable runtime directories."""
     environment = os.environ if environ is None else environ
     root = (Path.cwd() if project_root is None else Path(project_root)).resolve()
-    explicit = environment.get("HM_RAW_DATA_DIR")
+    raw_data_dir_env = environment.get("HM_RAW_DATA_DIR")
     precomputed_root = _resolve_precomputed_root(environment)
     kaggle_candidate = Path(kaggle_root) / KAGGLE_DATASET_RELATIVE_PATH
     local_candidate = root / "data" / "raw" / "h-and-m"
-    if explicit:
-        raw_data_root = Path(explicit).expanduser().resolve()
+    if raw_data_dir_env:
+        raw_data_root = Path(raw_data_dir_env).expanduser().resolve()
         if not _is_dataset_root(raw_data_root):
             raise ValueError(_missing_dataset_message())
         runtime_name = "kaggle" if _is_kaggle_path(raw_data_root, kaggle_root) else "local"
@@ -58,10 +58,10 @@ def discover_runtime(
     else:
         raise ValueError(_missing_dataset_message())
 
-    configured_runtime = environment.get("HM_RUNTIME_DIR")
+    runtime_dir_env = environment.get("HM_RUNTIME_DIR")
     runtime_root = (
-        Path(configured_runtime).expanduser().resolve()
-        if configured_runtime
+        Path(runtime_dir_env).expanduser().resolve()
+        if runtime_dir_env
         else (Path(kaggle_root) / "working" / "hm-customer-value" if runtime_name == "kaggle" else root / "data" / "runtime")
     )
     processed_root = runtime_root / "processed"
