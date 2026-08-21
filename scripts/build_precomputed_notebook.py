@@ -116,25 +116,34 @@ print("분석 범위: 전체 데이터셋")"""
     notebook.cells[4].source = """eda = json.loads((PRECOMPUTED_ROOT / "aggregates" / "eda_summary.json").read_text(encoding="utf-8"))
 iqr = json.loads((PRECOMPUTED_ROOT / "aggregates" / "iqr_unit_price.json").read_text(encoding="utf-8"))
 rfm = pd.read_csv(PRECOMPUTED_ROOT / "aggregates" / "rfm.csv", dtype={"customer_id": "string"})
-image_features = pd.read_csv(PRECOMPUTED_ROOT / "features" / "product_images" / "product_images.csv", dtype={"product_id": "string"})
+image_path = PRECOMPUTED_ROOT / "features" / "product_images" / "product_images.csv"
+article_path = PRECOMPUTED_ROOT / "processed" / "articles.csv"
+output_path = Path("/kaggle/working/product_images_enriched.csv")
+
+images = pd.read_csv(image_path, dtype={"product_id": "string"})
+articles = pd.read_csv(article_path, dtype={"product_id": "string"})
+
+if "product_name_length" not in articles.columns:
+    articles["product_name_length"] = articles["product_name"].fillna("").str.len()
+if "product_name_length" in images.columns:
+    images = images.drop(columns=["product_name_length"])
+
+product_images_enriched = images.merge(
+    articles[["product_id", "product_name_length"]],
+    on="product_id",
+    how="left",
+)
+
+product_images_enriched.to_csv(output_path, index=False)
+
+print(f"저장 완료: {output_path}")
+print(product_images_enriched.columns.tolist())
+product_images_enriched.head()
+
+image_features = product_images_enriched
+product_features = product_images_enriched
 monthly_value = pd.read_csv(PRECOMPUTED_ROOT / "aggregates" / "monthly_summary.csv")
 transaction_path = PRECOMPUTED_ROOT / "processed" / "transactions.csv"
-article_path = PRECOMPUTED_ROOT / "processed" / "articles.csv"
-
-product_features = image_features.copy()
-if "product_name_length" not in product_features.columns:
-    article_features = pd.read_csv(article_path, dtype={"product_id": "string"})
-    if "product_name_length" not in article_features.columns:
-        article_features["product_name_length"] = article_features["product_name"].fillna("").str.len()
-    product_features = product_features.merge(
-        article_features[["product_id", "product_name_length"]],
-        on="product_id",
-        how="left",
-    )
-image_features = product_features
-product_features_path = Path("/kaggle/working/product_images_enriched.csv")
-product_features.to_csv(product_features_path, index=False)
-print(f"이미지·텍스트 특징 저장: {product_features_path}")
 
 transaction_schema = pd.read_csv(transaction_path, nrows=0)
 article_schema = pd.read_csv(article_path, nrows=0)
