@@ -66,6 +66,7 @@ IMAGE_RGB_CHANNEL_COUNT = 3
 DEFAULT_OUTLIER_COLUMN = UNIT_PRICE_COLUMN
 DEFAULT_IQR_THRESHOLD = 1.5
 IQR_QUANTILES = (0.25, 0.75)
+IQR_STATISTIC_KEYS = ("q1", "q3", "lower_fence", "upper_fence", "outlier_count")
 
 # RFM policies
 DEFAULT_RFM_CUSTOMER_COLUMN = CUSTOMER_ID_COLUMN
@@ -106,6 +107,21 @@ RFM_REQUIRED_COLUMNS = (
     RFM_MONETARY_SCORE_COLUMN,
     RFM_SEGMENT_COLUMN,
 )
+
+
+def _calculate_iqr_statistics(values: np.ndarray, threshold: float) -> dict[str, float | int]:
+    """Calculate IQR fences and an exact outlier count for an in-memory numeric array."""
+    q1, q3 = np.quantile(values, IQR_QUANTILES)
+    iqr = q3 - q1
+    lower = q1 - threshold * iqr
+    upper = q3 + threshold * iqr
+    return {
+        "q1": float(q1),
+        "q3": float(q3),
+        "lower_fence": float(lower),
+        "upper_fence": float(upper),
+        "outlier_count": int(np.count_nonzero((values < lower) | (values > upper))),
+    }
 
 
 class DataAnalyzer:
@@ -320,32 +336,15 @@ class DataAnalyzer:
         force: bool = False,
     ) -> dict[str, float | int]:
         """Calculate exact full-data IQR fences and counts with a disk-backed NumPy array."""
-        iqr_filename = IQR_OUTPUT_FILENAME_TEMPLATE.format(column=column)
         if not force:
-            cached = self._find_reusable_json("IQR", self.context.aggregate_root / iqr_filename, iqr_filename)
+            cached = self._load_matching_iqr_cache(column, threshold)
             if cached is not None:
-                result = json.loads(cached.read_text(encoding="utf-8"))
-                if result.get("column") == column and result.get("threshold") == threshold:
-                    return {key: result[key] for key in ("q1", "q3", "lower_fence", "upper_fence", "outlier_count")}
-                self._record_rejection("IQR", cached, "parameters do not match")
-        row_count = sum(len(chunk) for chunk in pd.read_csv(self.transactions_path, usecols=[column], chunksize=self.chunksize))
-        cache_path = self.context.aggregate_root / f"{column}_values{".dat"}"
-        values = np.memmap(cache_path, dtype="float64", mode=MEMMAP_WRITE_MODE, shape=(row_count,))
-        offset = 0
-        for chunk in pd.read_csv(self.transactions_path, usecols=[column], chunksize=self.chunksize):
-            numeric = pd.to_numeric(chunk[column], errors=STRICT_PARSING_ERRORS).to_numpy(dtype="float64")
-            values[offset : offset + len(numeric)] = numeric
-            offset += len(numeric)
-        q1, q3 = np.quantile(values, IQR_QUANTILES)
-        iqr = q3 - q1
-        lower, upper = q1 - threshold * iqr, q3 + threshold * iqr
-        count = int(np.count_nonzero((values < lower) | (values > upper)))
+                return cached
+        values_path, row_count = self._materialize_numeric_column(column)
+        values = np.memmap(values_path, dtype="float64", mode="r", shape=(row_count,))
+        statistics = _calculate_iqr_statistics(values, threshold)
         del values
-        result = {"column": column, "threshold": threshold, "q1": float(q1), "q3": float(q3), "lower_fence": float(lower), "upper_fence": float(upper), "outlier_count": count}
-        output_path = self.context.aggregate_root / iqr_filename
-        output_path.write_text(json.dumps(result, indent=2), encoding="utf-8")
-        self._record_status("IQR", "COMPUTED", output_path)
-        return {key: result[key] for key in ("q1", "q3", "lower_fence", "upper_fence", "outlier_count")}
+        return self._save_iqr_result(column, threshold, statistics)
 
     def calculate_rfm(
         self,
@@ -462,16 +461,7 @@ class DataAnalyzer:
                     return summary
                 self._record_rejection("EDA", summary_path, "missing required summary fields")
 
-        row_count = self._csv_row_count(self.transactions_path)
-        values_path = self.context.aggregate_root / f"{DEFAULT_OUTLIER_COLUMN}_values{".dat"}"
-        if not values_path.is_file() or values_path.stat().st_size != row_count * np.dtype("float64").itemsize:
-            values = np.memmap(values_path, dtype="float64", mode=MEMMAP_WRITE_MODE, shape=(row_count,))
-            offset = 0
-            for chunk in pd.read_csv(self.transactions_path, usecols=[DEFAULT_OUTLIER_COLUMN], chunksize=self.chunksize):
-                numeric = pd.to_numeric(chunk[DEFAULT_OUTLIER_COLUMN], errors=STRICT_PARSING_ERRORS).to_numpy(dtype="float64")
-                values[offset : offset + len(numeric)] = numeric
-                offset += len(numeric)
-            del values
+        values_path, row_count = self._materialize_numeric_column(DEFAULT_OUTLIER_COLUMN)
         values = np.memmap(values_path, dtype="float64", mode="r", shape=(row_count,))
         price_statistics = self._numeric_summary(values)
         q1, q3 = price_statistics["q1"], price_statistics["q3"]
@@ -539,6 +529,47 @@ class DataAnalyzer:
                 "Attach the H&M competition input or set HM_RAW_DATA_DIR to rebuild it."
             )
         return self.context.raw_data_root
+
+    def _materialize_numeric_column(self, column: str) -> tuple[Path, int]:
+        """Return a valid disk-backed numeric transaction column, building it only when needed."""
+        row_count = self._csv_row_count(self.transactions_path)
+        values_path = self.context.aggregate_root / f"{column}_values{".dat"}"
+        expected_size = row_count * np.dtype("float64").itemsize
+        if values_path.is_file() and values_path.stat().st_size == expected_size:
+            return values_path, row_count
+
+        values = np.memmap(values_path, dtype="float64", mode=MEMMAP_WRITE_MODE, shape=(row_count,))
+        offset = 0
+        for chunk in pd.read_csv(self.transactions_path, usecols=[column], chunksize=self.chunksize):
+            numeric = pd.to_numeric(chunk[column], errors=STRICT_PARSING_ERRORS).to_numpy(dtype="float64")
+            values[offset : offset + len(numeric)] = numeric
+            offset += len(numeric)
+        values.flush()
+        del values
+        return values_path, row_count
+
+    def _load_matching_iqr_cache(self, column: str, threshold: float) -> dict[str, float | int] | None:
+        iqr_filename = IQR_OUTPUT_FILENAME_TEMPLATE.format(column=column)
+        cached = self._find_reusable_json("IQR", self.context.aggregate_root / iqr_filename, iqr_filename)
+        if cached is None:
+            return None
+        result = json.loads(cached.read_text(encoding="utf-8"))
+        if result.get("column") == column and result.get("threshold") == threshold:
+            return {key: result[key] for key in IQR_STATISTIC_KEYS}
+        self._record_rejection("IQR", cached, "parameters do not match")
+        return None
+
+    def _save_iqr_result(
+        self,
+        column: str,
+        threshold: float,
+        statistics: dict[str, float | int],
+    ) -> dict[str, float | int]:
+        result = {"column": column, "threshold": threshold, **statistics}
+        output_path = self.context.aggregate_root / IQR_OUTPUT_FILENAME_TEMPLATE.format(column=column)
+        output_path.write_text(json.dumps(result, indent=2), encoding="utf-8")
+        self._record_status("IQR", "COMPUTED", output_path)
+        return {key: result[key] for key in IQR_STATISTIC_KEYS}
 
     @staticmethod
     def _numeric_summary(values: np.ndarray) -> dict[str, float | int]:

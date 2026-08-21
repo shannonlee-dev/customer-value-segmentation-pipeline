@@ -11,19 +11,81 @@ def build_notebook(path: Path = Path("notebooks/analysis_report.ipynb")) -> Path
         new_code_cell("""import os
 from pathlib import Path
 
-BASE = Path("/kaggle/input/notebooks/classichit/codyssey-a-1-1")
+BASE = Path("/kaggle/input/notebooks/classichit")
 
-candidates = list(BASE.rglob("src/pipeline.py"))
+# 1. 프로젝트 소스 찾기
+pipeline_files = list(
+    BASE.rglob("customer-value-segmentation-pipeline/src/pipeline.py")
+)
 
-print("찾은 pipeline.py:", candidates)
+if not pipeline_files:
+    raise RuntimeError(
+        "프로젝트 소스를 찾지 못했습니다. "
+        "precomputed Notebook Version을 Input으로 추가했는지 확인하세요."
+    )
 
-if not candidates:
-    raise RuntimeError("src/pipeline.py를 찾지 못했습니다.")
+if len(pipeline_files) > 1:
+    raise RuntimeError(
+        f"프로젝트 Version이 여러 개 발견됐습니다: {len(pipeline_files)}개\\n"
+        "평가용 Input은 하나만 연결하세요."
+    )
 
-PROJECT_ROOT = candidates[0].parent.parent
+pipeline_file = pipeline_files[0]
+
+PROJECT_ROOT = pipeline_file.parent.parent
+VERSION_ROOT = PROJECT_ROOT.parent
+PRECOMPUTED_ROOT = VERSION_ROOT / "hm-customer-value"
+
+if not PRECOMPUTED_ROOT.is_dir():
+    raise RuntimeError(
+        f"같은 Version에서 hm-customer-value를 찾지 못했습니다:\\n"
+        f"{PRECOMPUTED_ROOT}"
+    )
+
+# 2. 핵심 full-data artifact 검증
+required = [
+    PRECOMPUTED_ROOT / "processed" / "transactions.csv",
+    PRECOMPUTED_ROOT / "processed" / "customers.csv",
+    PRECOMPUTED_ROOT / "processed" / "articles.csv",
+    PRECOMPUTED_ROOT / "aggregates" / "rfm.csv",
+]
+
+missing = [p for p in required if not p.is_file()]
+
+if missing:
+    raise RuntimeError(
+        "필수 precomputed artifact가 없습니다:\\n"
+        + "\\n".join(map(str, missing))
+    )
+
+# 3. 이미지 feature cache 확인
+image_features = list(
+    (PRECOMPUTED_ROOT / "features").rglob("product_images.csv")
+)
+
+if len(image_features) != 1:
+    raise RuntimeError(
+        f"product_images.csv 검증 실패: {len(image_features)}개 발견\\n"
+        "이미지 feature가 없으면 전체 이미지를 다시 처리할 수 있습니다."
+    )
+
+# 4. EDA/RFM cache 확인
+for filename in [
+    "eda_summary.json",
+    "monthly_summary.csv",
+]:
+    matches = list(PRECOMPUTED_ROOT.rglob(filename))
+    if not matches:
+        raise RuntimeError(f"EDA artifact 없음: {filename}")
+
+# 5. 환경변수 전달
 os.environ["PROJECT_ROOT"] = str(PROJECT_ROOT)
+os.environ["HM_PRECOMPUTED_DIR"] = str(PRECOMPUTED_ROOT)
 
-print("PROJECT_ROOT =", PROJECT_ROOT)"""),
+print("PROJECT_ROOT:", PROJECT_ROOT)
+print("PRECOMPUTED_ROOT:", PRECOMPUTED_ROOT)
+print("IMAGE_FEATURES:", image_features[0])
+print("Precomputed artifact validation: PASS")"""),
         new_markdown_cell("""# H&M Customer Value Analysis
 
 Open this notebook and select **Run All**. It discovers a writable runtime cache, `HM_PRECOMPUTED_DIR`, the attached Kaggle full-data artifact, Kaggle competition input, `data/raw/h-and-m`, or `HM_RAW_DATA_DIR` automatically. Every metric uses the full available dataset; no customer, transaction, product, or image analysis sampling is used.

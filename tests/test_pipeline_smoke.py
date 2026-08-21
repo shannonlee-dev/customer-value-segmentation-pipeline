@@ -10,7 +10,7 @@ from matplotlib import image as mpimg
 import nbformat
 
 from scripts.build_notebook import build_notebook
-from src.pipeline import DataAnalyzer
+from src.pipeline import DataAnalyzer, _calculate_iqr_statistics
 from src.runtime import discover_runtime
 
 
@@ -39,6 +39,20 @@ def write_fixture(raw: Path) -> None:
 
 
 class PipelineSmokeTest(unittest.TestCase):
+    def test_calculate_iqr_statistics_returns_fences_and_outlier_count(self) -> None:
+        result = _calculate_iqr_statistics(np.array([1, 2, 3, 4, 100]), threshold=1.5)
+
+        self.assertEqual(
+            result,
+            {
+                "q1": 2.0,
+                "q3": 4.0,
+                "lower_fence": -1.0,
+                "upper_fence": 7.0,
+                "outlier_count": 1,
+            },
+        )
+
     def test_extract_image_features_calculates_text_and_pixel_features(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -83,6 +97,17 @@ class PipelineSmokeTest(unittest.TestCase):
 
             self.assertIn("product_features = image_features", code)
             self.assertNotIn('articles[["product_id", "product_name_length"]]', code)
+
+    def test_generated_notebook_validates_and_configures_precomputed_artifacts(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            notebook = build_notebook(Path(directory) / "analysis_report.ipynb")
+            rendered = nbformat.read(notebook, as_version=4)
+            setup = rendered.cells[0].source
+
+            self.assertIn('PRECOMPUTED_ROOT = VERSION_ROOT / "hm-customer-value"', setup)
+            self.assertIn('PRECOMPUTED_ROOT / "processed" / "transactions.csv"', setup)
+            self.assertIn('"product_images.csv"', setup)
+            self.assertIn('os.environ["HM_PRECOMPUTED_DIR"] = str(PRECOMPUTED_ROOT)', setup)
 
     def test_pipeline_generates_all_artifacts_from_a_complete_fixture(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
