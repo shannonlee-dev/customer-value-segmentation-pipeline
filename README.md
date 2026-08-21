@@ -165,20 +165,19 @@ RMSE에서는 평균이 더 낮았는데, 이는 평균이 제곱오차를 최�
 최종 연령 결측치 처리 정책은 다음과 같다.
 
 1. `age`가 존재하면 원래 값을 유지한다.
-2. `age`가 결측이고 `club_member_status`에 충분한 표본이 존재하면 해당 그룹의 **median age**를 사용한다.
-3. 그룹의 표본 수가 설정된 최소 기준보다 작으면 그룹 통계량을 사용하지 않는다.
-4. `club_member_status`가 결측이거나 그룹 표본이 부족하면 전체 고객의 **global median age**를 fallback으로 사용한다.
-5. 결측 고객 자체를 삭제하지 않는다.
+2. `age`가 결측이면 같은 `club_member_status` 그룹의 **median age**를 사용한다.
+3. 그룹의 알려진 연령이 없어 그룹 중앙값을 계산할 수 없으면 전체 고객의 **global median age**를 fallback으로 사용한다.
+4. 결측 고객 자체를 삭제하지 않는다.
 
-예를 들어 검증 데이터 기준으로 충분한 표본이 존재한 그룹은 다음과 같았다.
+예를 들어 그룹 중앙값이 계산된 그룹은 다음과 같았다.
 
 | Group | Training Count | Median Age | Policy |
 |---|---:|---:|---|
 | ACTIVE | 1,012,976 | 31 | Group median |
 | PRE-CREATE | 68,525 | 41 | Group median |
-| LEFT CLUB | 373 | 29 | Global median fallback |
+| LEFT CLUB | 373 | 29 | Group median |
 
-`LEFT CLUB`은 표본 수가 적어 그룹 중앙값의 안정성이 낮다고 판단하여 global median을 사용한다.
+현재 구현에는 그룹별 최소 표본 수 기준이 없다. 따라서 `LEFT CLUB`처럼 표본 수가 작은 그룹도 알려진 연령이 있으면 그룹 중앙값을 사용하며, 알려진 연령이 전혀 없는 그룹만 global median으로 fallback한다.
 
 ### 5. Limitations
 
