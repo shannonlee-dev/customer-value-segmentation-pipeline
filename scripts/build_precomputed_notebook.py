@@ -53,6 +53,26 @@ import pandas as pd
 import seaborn as sns
 from IPython.display import Markdown, display
 
+available_fonts = {font.name for font in matplotlib.font_manager.fontManager.ttflist}
+korean_font = next((name for name in ("NanumGothic", "Noto Sans CJK KR", "Malgun Gothic") if name in available_fonts), None)
+if korean_font:
+    matplotlib.rcParams["font.family"] = korean_font
+    CHART_TEXT = {
+        "price_title": "상대 가격 분포", "price_x": "상대 데이터셋 가격값", "count_y": "거래 건수",
+        "iqr_title": "IQR 필터링 전후 상대 가격", "iqr_x": "IQR 처리 상태", "segment_title": "RFM 세그먼트별 고객 수",
+        "segment_x": "RFM 세그먼트", "customer_y": "고객 수", "feature_title": "상품 이미지와 텍스트 특징 상관관계",
+        "feature_axis": "특징", "frequency_title": "고객 구매 빈도와 Monetary 값", "frequency_x": "고유 구매일 수",
+        "monetary_y": "합계 상대 데이터셋 값", "monthly_title": "월별 합계 상대 데이터셋 값", "month_x": "주문 월",
+    }
+else:
+    CHART_TEXT = {
+        "price_title": "Relative Price Distribution", "price_x": "Relative dataset price value", "count_y": "Transaction count",
+        "iqr_title": "Relative Price Before vs After IQR Filtering", "iqr_x": "IQR treatment state", "segment_title": "RFM Segment Customer Counts",
+        "segment_x": "RFM segment", "customer_y": "Customer count", "feature_title": "Product Image and Text Feature Correlation",
+        "feature_axis": "Feature", "frequency_title": "Customer Purchase Frequency vs Monetary Value", "frequency_x": "Unique purchase dates",
+        "monetary_y": "Aggregate relative dataset value", "monthly_title": "Monthly Aggregate Relative Dataset Value", "month_x": "Order month",
+    }
+
 def summarize_rfm_segments(rfm):
     summary = rfm.groupby("segment").agg(
         customers=("customer_id", "size"),
@@ -102,6 +122,16 @@ monthly_value = pd.read_csv(PRECOMPUTED_ROOT / "aggregates" / "monthly_summary.c
 transaction_path = PRECOMPUTED_ROOT / "processed" / "transactions.csv"
 article_path = PRECOMPUTED_ROOT / "processed" / "articles.csv"
 
+if "product_name_length" not in image_features.columns:
+    article_features = pd.read_csv(article_path, dtype={"product_id": "string"})
+    if "product_name_length" not in article_features.columns:
+        article_features["product_name_length"] = article_features["product_name"].fillna("").str.len()
+    image_features = image_features.merge(
+        article_features[["product_id", "product_name_length"]],
+        on="product_id",
+        how="left",
+    )
+
 transaction_schema = pd.read_csv(transaction_path, nrows=0)
 article_schema = pd.read_csv(article_path, nrows=0)
 summary = {
@@ -135,6 +165,25 @@ print("이미지 배열 처리: 사전계산 결과 재사용")"""
         + "# monthly_value는 사전계산 결과에서 이미 읽었습니다.\n"
         + chart_code[end:]
     )
+    for original, replacement in {
+        'plt.title("상대 가격 분포")': 'plt.title(CHART_TEXT["price_title"])',
+        'plt.xlabel("상대 데이터셋 가격값")': 'plt.xlabel(CHART_TEXT["price_x"])',
+        'plt.ylabel("거래 건수")': 'plt.ylabel(CHART_TEXT["count_y"])',
+        'plt.title("IQR 필터링 전후 상대 가격")': 'plt.title(CHART_TEXT["iqr_title"])',
+        'plt.xlabel("IQR 처리 상태")': 'plt.xlabel(CHART_TEXT["iqr_x"])',
+        'plt.title("RFM 세그먼트별 고객 수")': 'plt.title(CHART_TEXT["segment_title"])',
+        'plt.xlabel("RFM 세그먼트")': 'plt.xlabel(CHART_TEXT["segment_x"])',
+        'plt.ylabel("고객 수")': 'plt.ylabel(CHART_TEXT["customer_y"])',
+        'plt.title("상품 이미지와 텍스트 특징 상관관계")': 'plt.title(CHART_TEXT["feature_title"])',
+        'plt.xlabel("특징")': 'plt.xlabel(CHART_TEXT["feature_axis"])',
+        'plt.ylabel("특징")': 'plt.ylabel(CHART_TEXT["feature_axis"])',
+        'plt.title("고객 구매 빈도와 Monetary 값")': 'plt.title(CHART_TEXT["frequency_title"])',
+        'plt.xlabel("고유 구매일 수")': 'plt.xlabel(CHART_TEXT["frequency_x"])',
+        'plt.ylabel("합계 상대 데이터셋 값")': 'plt.ylabel(CHART_TEXT["monetary_y"])',
+        'plt.title("월별 합계 상대 데이터셋 값")': 'plt.title(CHART_TEXT["monthly_title"])',
+        'plt.xlabel("주문 월")': 'plt.xlabel(CHART_TEXT["month_x"])',
+    }.items():
+        notebook.cells[6].source = notebook.cells[6].source.replace(original, replacement)
     notebook.cells[8].source = notebook.cells[8].source.replace(
         "insight_path = context.artifact_root / \"business_insights.md\"",
         'insight_path = Path("/kaggle/working/business_insights.md")',

@@ -57,3 +57,7 @@ class NotebookContractTest(unittest.TestCase):
         self.assertNotIn("DataAnalyzer", code)
         self.assertNotIn("src.reporting", code)
         self.assertNotIn("customer-value-segmentation-pipeline/src", code)
+        self.assertIn('if "product_name_length" not in image_features.columns', code)
+        self.assertIn('article_features[["product_id", "product_name_length"]]', code)
+        self.assertIn("available_fonts", code)
+        self.assertIn('plt.title(CHART_TEXT["price_title"])', code)
