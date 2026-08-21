@@ -7,6 +7,7 @@ from pathlib import Path
 import nbformat
 
 from scripts.build_notebook import build_notebook
+from scripts.build_precomputed_notebook import build_notebook as build_precomputed_notebook
 
 
 REQUIRED_MARKERS = (
@@ -39,3 +40,18 @@ class NotebookContractTest(unittest.TestCase):
             summary = inspect_source_notebook(build_notebook(Path(directory) / "analysis_report.ipynb"))
 
         self.assertEqual(summary["status"], "PASS")
+
+    def test_precomputed_notebook_keeps_the_main_notebook_layout(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            main = nbformat.read(build_notebook(root / "analysis_report.ipynb"), as_version=4)
+            precomputed = nbformat.read(build_precomputed_notebook(root / "precomputed_report.ipynb"), as_version=4)
+            code = "\n".join(cell.source for cell in precomputed.cells if cell.cell_type == "code")
+
+        self.assertEqual(len(precomputed.cells), len(main.cells))
+        self.assertEqual(
+            [cell.source for cell in precomputed.cells if cell.cell_type == "markdown"],
+            [cell.source for cell in main.cells if cell.cell_type == "markdown"],
+        )
+        self.assertIn("aggregates/eda_summary.json", code)
+        self.assertNotIn("DataAnalyzer", code)
