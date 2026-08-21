@@ -29,6 +29,13 @@ def inspect_source_notebook(path: Path) -> dict[str, int | str]:
 
 
 class NotebookContractTest(unittest.TestCase):
+    def test_readme_links_to_the_pipeline_flow_diagram(self) -> None:
+        project = Path(__file__).resolve().parents[1]
+        readme = (project / "README.md").read_text(encoding="utf-8")
+
+        self.assertIn("assets/pipeline-flow.svg", readme)
+        self.assertTrue((project / "assets" / "pipeline-flow.svg").is_file())
+
     def test_committed_notebook_is_clean_and_full_dataset_scoped(self) -> None:
         project = Path(__file__).resolve().parents[1]
         summary = inspect_source_notebook(project / "notebooks" / "analysis_report.ipynb")

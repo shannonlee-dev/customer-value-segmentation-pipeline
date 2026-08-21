@@ -1,5 +1,7 @@
 # H&M 고객가치 세분화 파이프라인
 
+![H&M 고객가치 세분화 파이프라인 흐름도](assets/pipeline-flow.svg)
+
 `notebooks/analysis_report.ipynb`를 열어 **Run All** 하면 H&M 전체 거래·고객·상품·이미지를 같은 코드로 분석한다. 원본 행과 이미지는 저장소에 포함하지 않는다. `price`는 데이터셋의 상대값이며 통화 금액으로 해석하지 않는다.
 
 ## 데이터와 범위

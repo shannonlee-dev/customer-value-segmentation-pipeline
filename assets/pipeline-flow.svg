@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="810" viewBox="0 0 1120 810" role="img" aria-labelledby="title desc">
+  <title id="title">H&amp;M customer value segmentation pipeline</title>
+  <desc id="desc">Raw H&amp;M data flows through transaction normalization, age imputation, image features, IQR and RFM analysis into EDA reporting, a Jupyter notebook, and business insights.</desc>
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="5" refY="5" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#1f2937"/>
+    </marker>
+    <style>
+      .bg { fill: #f7f7f6; }
+      .line { fill: none; stroke: #1f2937; stroke-width: 2.5; stroke-linecap: square; stroke-linejoin: round; }
+      .label { fill: #20242a; font-family: "Noto Sans KR", "Apple SD Gothic Neo", Arial, sans-serif; font-size: 26px; font-weight: 500; text-anchor: middle; }
+      .small { font-size: 21px; }
+      .title { font-size: 29px; font-weight: 700; }
+    </style>
+  </defs>
+  <rect class="bg" width="1120" height="810" rx="24"/>
+
+  <text class="label title" x="560" y="58">H&amp;M RAW DATA</text>
+  <path class="line" d="M560 78v24 M165 102h790 M165 102v28 M560 102v28 M955 102v28"/>
+
+  <text class="label" x="165" y="165">transactions</text>
+  <text class="label" x="560" y="165">customers</text>
+  <text class="label" x="955" y="165">articles + images</text>
+  <path class="line" marker-end="url(#arrow)" d="M165 184v74 M560 184v74 M955 184v74"/>
+
+  <text class="label small" x="165" y="315">chunk 정규화</text>
+  <text class="label small" x="560" y="315">age imputation</text>
+  <text class="label small" x="955" y="315">image features</text>
+  <path class="line" d="M165 335v55 M955 335v55"/>
+  <path class="line" d="M165 390h205v34 M955 390v34"/>
+  <path class="line" marker-end="url(#arrow)" d="M165 424v42 M370 424v42 M955 424v42"/>
+
+  <text class="label" x="165" y="510">IQR</text>
+  <text class="label" x="370" y="510">RFM</text>
+  <text class="label small" x="955" y="500">image/text</text>
+  <text class="label small" x="955" y="528">statistics</text>
+  <path class="line" d="M165 532v88 M370 532v32 M955 548v72 M165 620h790"/>
+  <path class="line" marker-end="url(#arrow)" d="M370 564v45"/>
+  <text class="label small" x="370" y="590">customer segments</text>
+  <path class="line" d="M370 610v10"/>
+
+  <path class="line" marker-end="url(#arrow)" d="M560 620v47"/>
+  <text class="label" x="560" y="710">EDA / Reporting</text>
+  <path class="line" marker-end="url(#arrow)" d="M560 730v42"/>
+  <text class="label" x="560" y="808">Jupyter Notebook → Business Insights</text>
+</svg>
