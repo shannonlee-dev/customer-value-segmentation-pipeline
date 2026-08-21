@@ -7,7 +7,9 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 from matplotlib import image as mpimg
+import nbformat
 
+from scripts.build_notebook import build_notebook
 from src.pipeline import DataAnalyzer
 from src.runtime import discover_runtime
 
@@ -37,6 +39,15 @@ def write_fixture(raw: Path) -> None:
 
 
 class PipelineSmokeTest(unittest.TestCase):
+    def test_generated_notebook_uses_product_name_length_from_image_features(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            notebook = build_notebook(Path(directory) / "analysis_report.ipynb")
+            rendered = nbformat.read(notebook, as_version=4)
+            code = "\n".join(cell.source for cell in rendered.cells if cell.cell_type == "code")
+
+            self.assertIn("product_features = image_features", code)
+            self.assertNotIn('articles[["product_id", "product_name_length"]]', code)
+
     def test_pipeline_generates_all_artifacts_from_a_complete_fixture(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -57,6 +68,11 @@ class PipelineSmokeTest(unittest.TestCase):
 
             self.assertEqual(summary["transaction_rows"], 4)
             self.assertEqual(len(image_features), 3)
+            self.assertNotIn("sales_channel_id", pd.read_csv(analyzer.transactions_path, nrows=1).columns)
+            self.assertNotIn("fashion_news_frequency", analyzer.customers.columns)
+            self.assertNotIn("age_was_missing", analyzer.customers.columns)
+            self.assertNotIn("category", analyzer.articles.columns)
+            self.assertNotIn("image_status", image_features.columns)
             self.assertNotIn("product_name_length", analyzer.articles.columns)
             self.assertIn("product_name_length", image_features.columns)
             self.assertNotIn("product_name_length", pd.read_csv(analyzer.articles_path, nrows=1).columns)
@@ -64,6 +80,39 @@ class PipelineSmokeTest(unittest.TestCase):
             self.assertEqual(iqr["outlier_count"], 0)
             self.assertEqual(len(rfm), 3)
             self.assertTrue(Path(eda["monthly_summary_path"]).is_file())
+
+    def test_load_data_rebuilds_caches_that_contain_removed_columns(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            raw = root / "raw"
+            raw.mkdir()
+            write_fixture(raw)
+            context = discover_runtime(
+                Path.cwd(),
+                {"HM_RAW_DATA_DIR": str(raw), "HM_RUNTIME_DIR": str(root / "runtime")},
+            )
+            analyzer = DataAnalyzer(context, chunksize=2)
+            analyzer.load_data()
+            analyzer.engineer_features()
+
+            for path, column in (
+                (analyzer.transactions_path, "sales_channel_id"),
+                (analyzer.customers_path, "fashion_news_frequency"),
+                (analyzer.articles_path, "category"),
+                (analyzer.images_path, "image_status"),
+            ):
+                frame = pd.read_csv(path)
+                frame[column] = "obsolete"
+                frame.to_csv(path, index=False)
+
+            refreshed = DataAnalyzer(context, chunksize=2)
+            refreshed.load_data()
+            image_features = refreshed.engineer_features()
+
+            self.assertNotIn("sales_channel_id", pd.read_csv(refreshed.transactions_path, nrows=1).columns)
+            self.assertNotIn("fashion_news_frequency", refreshed.customers.columns)
+            self.assertNotIn("category", refreshed.articles.columns)
+            self.assertNotIn("image_status", image_features.columns)
 
 
 if __name__ == "__main__":

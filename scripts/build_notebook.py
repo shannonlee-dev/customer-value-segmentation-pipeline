@@ -93,8 +93,8 @@ articles = pd.read_csv(analyzer.articles_path, dtype={"product_id": "string"})
 inventory = pd.DataFrame([
     ["transactions", "one transaction", f"{summary['transaction_rows']:,} × {len(transaction_schema.columns)}", "date, numeric, IDs", "RFM and time series"],
     ["customers", "one customer", f"{len(customers):,} × {len(customers.columns)}", "numeric, categories, ID", "age and membership"],
-    ["articles", "one product", f"{len(articles):,} × {len(articles.columns)}", "text, categories, ID", "text/category features"],
-    ["image_features", "one product image", f"{len(image_features):,} × {len(image_features.columns)}", "numeric, status, ID", "full-image Mean/Std"],
+    ["articles", "one product", f"{len(articles):,} × {len(articles.columns)}", "text, ID", "text features"],
+    ["image_features", "one product image", f"{len(image_features):,} × {len(image_features.columns)}", "numeric, ID", "full-image Mean/Std"],
 ], columns=["Source", "Grain", "Shape", "Primary types", "Role"])
 display(Markdown("## Dataset Inventory"))
 display(inventory)
@@ -123,7 +123,7 @@ display(Markdown(
 price_age_corr = eda["price_age_correlation"]
 image_text_corr = eda["image_text_correlation"]
 monthly_value = pd.read_csv(eda["monthly_summary_path"])
-product_features = image_features.merge(articles[["product_id", "product_name_length"]], on="product_id", how="left")
+product_features = image_features
 display(Markdown(f"**Transaction/customer scope:** price–age correlation is `r = {price_age_corr:+.3f}`. This is a linear-association measure; age alone is unlikely to explain price when the magnitude is close to zero."))
 display(Markdown(f"**Product/image scope:** image-mean–name-length correlation is `r = {image_text_corr:+.3f}`. This measures association between simple visual brightness and text length, not product quality or demand."))
 
