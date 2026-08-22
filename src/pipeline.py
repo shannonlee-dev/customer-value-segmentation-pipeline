@@ -7,54 +7,79 @@ import numpy as np
 import pandas as pd
 from matplotlib import image as mpimg
 
+from ._pipeline.artifacts import ArtifactStore
+from ._pipeline.contracts import (
+    ARTICLE_NORMALIZED_REQUIRED_COLUMNS,
+    ARTICLE_RENAMES,
+    ARTICLES_CACHE_FILENAME,
+    CSV_APPEND_MODE,
+    CSV_WRITE_MODE,
+    CUSTOMER_AGE_COLUMN,
+    CUSTOMER_ID_COLUMN,
+    CUSTOMER_MEMBERSHIP_COLUMN,
+    CUSTOMER_NORMALIZED_REQUIRED_COLUMNS,
+    CUSTOMERS_CACHE_FILENAME,
+    DEFAULT_CHUNKSIZE,
+    DEFAULT_RFM_AMOUNT_COLUMN,
+    DEFAULT_RFM_CUSTOMER_COLUMN,
+    DEFAULT_RFM_DATE_COLUMN,
+    DEFAULT_RFM_PARTITION_COUNT,
+    IMAGE_FEATURE_REQUIRED_COLUMNS,
+    IMAGE_MEAN_COLUMN,
+    IMAGE_PATH_COLUMN,
+    IMAGE_STD_COLUMN,
+    ORDER_DATE_COLUMN,
+    PRODUCT_FEATURES_CACHE_FILENAME,
+    PRODUCT_ID_COLUMN,
+    PRODUCT_NAME_COLUMN,
+    PRODUCT_NAME_LENGTH_COLUMN,
+    RAW_ARTICLE_ID_COLUMN,
+    RAW_ARTICLE_REQUIRED_COLUMNS,
+    RAW_ARTICLES_FILENAME,
+    RAW_CUSTOMER_REQUIRED_COLUMNS,
+    RAW_CUSTOMERS_FILENAME,
+    RAW_DATE_COLUMN,
+    RAW_PRICE_COLUMN,
+    RAW_TRANSACTION_DTYPES,
+    RAW_TRANSACTION_REQUIRED_COLUMNS,
+    RAW_TRANSACTIONS_FILENAME,
+    RFM_BEST_SCORE,
+    RFM_FREQUENCY_COLUMN,
+    RFM_FREQUENCY_SCORE_COLUMN,
+    RFM_HIGH_SCORE_MIN,
+    RFM_LOW_SCORE_MAX,
+    RFM_MONETARY_COLUMN,
+    RFM_MONETARY_SCORE_COLUMN,
+    RFM_OUTPUT_FILENAME,
+    RFM_RECENCY_COLUMN,
+    RFM_RECENCY_SCORE_COLUMN,
+    RFM_REFERENCE_OFFSET_DAYS,
+    RFM_REQUIRED_COLUMNS,
+    RFM_SCORE_LABELS,
+    RFM_SEGMENT_CHURNED,
+    RFM_SEGMENT_COLUMN,
+    RFM_SEGMENT_LOYAL,
+    RFM_SEGMENT_NEW,
+    RFM_SEGMENT_POTENTIAL,
+    RFM_SEGMENT_VIP,
+    STRING_DTYPE,
+    STRICT_PARSING_ERRORS,
+    TRANSACTION_NORMALIZED_REQUIRED_COLUMNS,
+    TRANSACTION_RENAMES,
+    TRANSACTIONS_CACHE_FILENAME,
+    UNIT_PRICE_COLUMN,
+)
 from .reporting import summarize_numeric
 from .runtime import RuntimeContext
 
 
-# Runtime and cache defaults
-DEFAULT_CHUNKSIZE = 500_000
-STRING_DTYPE = "string"
-STRICT_PARSING_ERRORS = "raise"
-CSV_WRITE_MODE = "w"
-CSV_APPEND_MODE = "a"
 MEMMAP_WRITE_MODE = "w+"
-TRANSACTIONS_CACHE_FILENAME = "transactions.csv"
-CUSTOMERS_CACHE_FILENAME = "customers.csv"
-ARTICLES_CACHE_FILENAME = "articles.csv"
-PRODUCT_FEATURES_CACHE_FILENAME = "product_features.csv"
-RFM_OUTPUT_FILENAME = "rfm.csv"
 IQR_OUTPUT_FILENAME_TEMPLATE = "iqr_{column}.json"
 EDA_SUMMARY_FILENAME = "eda_summary.json"
 MONTHLY_SUMMARY_FILENAME = "monthly_summary.csv"
 EDA_HISTOGRAM_BIN_COUNT = 40
 RFM_PARTITIONS_DIRECTORY = "rfm_partitions"
 RFM_PARTITION_FILENAME_TEMPLATE = "part_{index:02d}.csv"
-
-# H&M source schema and normalized schema
-RAW_TRANSACTIONS_FILENAME = "transactions_train.csv"
-RAW_CUSTOMERS_FILENAME = "customers.csv"
-RAW_ARTICLES_FILENAME = "articles.csv"
-CUSTOMER_ID_COLUMN = "customer_id"
-RAW_ARTICLE_ID_COLUMN = "article_id"
-PRODUCT_ID_COLUMN = "product_id"
-ORDER_DATE_COLUMN = "order_date"
-UNIT_PRICE_COLUMN = "unit_price"
-RAW_DATE_COLUMN = "t_dat"
-RAW_PRICE_COLUMN = "price"
-RAW_TRANSACTION_REQUIRED_COLUMNS = (RAW_DATE_COLUMN, CUSTOMER_ID_COLUMN, RAW_ARTICLE_ID_COLUMN, RAW_PRICE_COLUMN)
-RAW_TRANSACTION_DTYPES = {CUSTOMER_ID_COLUMN: STRING_DTYPE, RAW_ARTICLE_ID_COLUMN: STRING_DTYPE}
-CUSTOMER_AGE_COLUMN = "age"
-CUSTOMER_MEMBERSHIP_COLUMN = "club_member_status"
-PRODUCT_NAME_COLUMN = "product_name"
-PRODUCT_NAME_LENGTH_COLUMN = "product_name_length"
-RAW_PRODUCT_NAME_COLUMN = "prod_name"
-IMAGE_PATH_COLUMN = "image_path"
-IMAGE_MEAN_COLUMN = "image_mean"
-IMAGE_STD_COLUMN = "image_std"
-RAW_CUSTOMER_REQUIRED_COLUMNS = (CUSTOMER_ID_COLUMN, CUSTOMER_AGE_COLUMN, CUSTOMER_MEMBERSHIP_COLUMN)
-RAW_ARTICLE_REQUIRED_COLUMNS = (RAW_ARTICLE_ID_COLUMN, RAW_PRODUCT_NAME_COLUMN)
-TRANSACTION_RENAMES = {RAW_DATE_COLUMN: ORDER_DATE_COLUMN, RAW_ARTICLE_ID_COLUMN: PRODUCT_ID_COLUMN, RAW_PRICE_COLUMN: UNIT_PRICE_COLUMN}
-ARTICLE_RENAMES = {RAW_ARTICLE_ID_COLUMN: PRODUCT_ID_COLUMN, RAW_PRODUCT_NAME_COLUMN: PRODUCT_NAME_COLUMN}
 
 # Data-quality and product-feature policies
 DEFAULT_MISSING_VALUE_STRATEGY = "median"
@@ -67,47 +92,6 @@ DEFAULT_OUTLIER_COLUMN = UNIT_PRICE_COLUMN
 DEFAULT_IQR_THRESHOLD = 1.5
 IQR_QUANTILES = (0.25, 0.75)
 IQR_STATISTIC_KEYS = ("q1", "q3", "lower_fence", "upper_fence", "outlier_count")
-
-# RFM policies
-DEFAULT_RFM_CUSTOMER_COLUMN = CUSTOMER_ID_COLUMN
-DEFAULT_RFM_DATE_COLUMN = ORDER_DATE_COLUMN
-DEFAULT_RFM_AMOUNT_COLUMN = UNIT_PRICE_COLUMN
-DEFAULT_RFM_PARTITION_COUNT = 64
-RFM_REFERENCE_OFFSET_DAYS = 1
-RFM_SCORE_QUANTILE_COUNT = 4
-RFM_SCORE_LABELS = (1, 2, 3, 4)
-RFM_HIGH_SCORE_MIN = 3
-RFM_BEST_SCORE = 4
-RFM_LOW_SCORE_MAX = 2
-RFM_SEGMENT_COLUMN = "segment"
-RFM_RECENCY_COLUMN = "recency"
-RFM_FREQUENCY_COLUMN = "frequency"
-RFM_MONETARY_COLUMN = "monetary"
-RFM_RECENCY_SCORE_COLUMN = "r_score"
-RFM_FREQUENCY_SCORE_COLUMN = "f_score"
-RFM_MONETARY_SCORE_COLUMN = "m_score"
-RFM_SEGMENT_VIP = "VIP"
-RFM_SEGMENT_LOYAL = "Loyal"
-RFM_SEGMENT_NEW = "New"
-RFM_SEGMENT_CHURNED = "Churned"
-RFM_SEGMENT_POTENTIAL = "Potential"
-
-# Reusable artifact schema contracts
-TRANSACTION_NORMALIZED_REQUIRED_COLUMNS = (CUSTOMER_ID_COLUMN, PRODUCT_ID_COLUMN, ORDER_DATE_COLUMN, UNIT_PRICE_COLUMN)
-CUSTOMER_NORMALIZED_REQUIRED_COLUMNS = (CUSTOMER_ID_COLUMN, CUSTOMER_AGE_COLUMN, CUSTOMER_MEMBERSHIP_COLUMN)
-ARTICLE_NORMALIZED_REQUIRED_COLUMNS = (PRODUCT_ID_COLUMN, PRODUCT_NAME_COLUMN, IMAGE_PATH_COLUMN)
-IMAGE_FEATURE_REQUIRED_COLUMNS = (PRODUCT_ID_COLUMN, IMAGE_PATH_COLUMN, PRODUCT_NAME_LENGTH_COLUMN, IMAGE_MEAN_COLUMN, IMAGE_STD_COLUMN)
-RFM_REQUIRED_COLUMNS = (
-    CUSTOMER_ID_COLUMN,
-    RFM_RECENCY_COLUMN,
-    RFM_FREQUENCY_COLUMN,
-    RFM_MONETARY_COLUMN,
-    RFM_RECENCY_SCORE_COLUMN,
-    RFM_FREQUENCY_SCORE_COLUMN,
-    RFM_MONETARY_SCORE_COLUMN,
-    RFM_SEGMENT_COLUMN,
-)
-
 
 def _calculate_iqr_statistics(values: np.ndarray, threshold: float) -> dict[str, float | int]:
     """Calculate IQR fences and an exact outlier count for an in-memory numeric array."""
@@ -144,6 +128,11 @@ class DataAnalyzer:
         self.articles: pd.DataFrame | None = None
         self.artifact_status: dict[str, str] = {}
         self.cache_messages: list[str] = []
+        self._artifacts = ArtifactStore(
+            context,
+            self.artifact_status,
+            self.cache_messages,
+        )
 
     def load_data(self, *, force: bool = False) -> dict[str, int]:
         """Cache every source row as normalized CSV files; never sample analysis data."""
@@ -179,7 +168,7 @@ class DataAnalyzer:
             self.customers_path,
             index=False,
         )
-        self._record_status("customers", "COMPUTED", self.customers_path)
+        self._artifacts.record_status("customers", "COMPUTED", self.customers_path)
         return {
             "missing_before": missing_before,
             "missing_after": missing_after,
@@ -187,7 +176,7 @@ class DataAnalyzer:
 
     def engineer_features(self, *, force: bool = False) -> pd.DataFrame:
         """Reuse cached product features or calculate them once."""
-        source = None if force else self._find_reusable_csv(
+        source = None if force else self._artifacts.find_reusable_csv(
             "product features",
             self.runtime_product_features_path,
             PRODUCT_FEATURES_CACHE_FILENAME,
@@ -208,7 +197,7 @@ class DataAnalyzer:
         features = pd.DataFrame.from_records(records)
         self.product_features_path = self.runtime_product_features_path
         features.to_csv(self.product_features_path, index=False)
-        self._record_status("product features", "COMPUTED", self.product_features_path)
+        self._artifacts.record_status("product features", "COMPUTED", self.product_features_path)
         return features
 
     @staticmethod
@@ -280,7 +269,12 @@ class DataAnalyzer:
     def _load_cached_rfm(self, customer_col: str, *, force: bool) -> pd.DataFrame | None:
         if force:
             return None
-        source = self._find_reusable_csv("RFM", self.runtime_rfm_path, RFM_OUTPUT_FILENAME, RFM_REQUIRED_COLUMNS)
+        source = self._artifacts.find_reusable_csv(
+            "RFM",
+            self.runtime_rfm_path,
+            RFM_OUTPUT_FILENAME,
+            RFM_REQUIRED_COLUMNS,
+        )
         if source is None:
             return None
         self.rfm_path = source
@@ -369,7 +363,7 @@ class DataAnalyzer:
     def _save_rfm(self, rfm: pd.DataFrame) -> pd.DataFrame:
         self.rfm_path = self.runtime_rfm_path
         rfm.to_csv(self.rfm_path, index=False)
-        self._record_status("RFM", "COMPUTED", self.rfm_path)
+        self._artifacts.record_status("RFM", "COMPUTED", self.rfm_path)
         return rfm
 
     def prepare_eda_artifacts(self, *, force: bool = False) -> dict[str, object]:
@@ -377,8 +371,12 @@ class DataAnalyzer:
         runtime_summary = self.context.aggregate_root / EDA_SUMMARY_FILENAME
         runtime_monthly = self.context.aggregate_root / MONTHLY_SUMMARY_FILENAME
         if not force:
-            summary_path = self._find_reusable_json("EDA", runtime_summary, EDA_SUMMARY_FILENAME)
-            monthly_path = self._find_reusable_csv(
+            summary_path = self._artifacts.find_reusable_json(
+                "EDA",
+                runtime_summary,
+                EDA_SUMMARY_FILENAME,
+            )
+            monthly_path = self._artifacts.find_reusable_csv(
                 "monthly EDA", runtime_monthly, MONTHLY_SUMMARY_FILENAME, ("order_month", RFM_MONETARY_COLUMN)
             )
             if summary_path is not None and monthly_path is not None:
@@ -386,9 +384,13 @@ class DataAnalyzer:
                 required = {"price_statistics", "histogram_edges", "histogram_counts", "boxplot_before", "boxplot_after", "price_age_correlation", "image_text_correlation"}
                 if required.issubset(summary):
                     summary["monthly_summary_path"] = str(monthly_path)
-                    self._record_status("EDA", "REUSED", summary_path)
+                    self._artifacts.record_status("EDA", "REUSED", summary_path)
                     return summary
-                self._record_rejection("EDA", summary_path, "missing required summary fields")
+                self._artifacts.record_rejection(
+                    "EDA",
+                    summary_path,
+                    "missing required summary fields",
+                )
 
         if self.customers is None:
             raise ValueError("Call load_data before prepare_eda_artifacts")
@@ -441,8 +443,8 @@ class DataAnalyzer:
         monthly.to_csv(runtime_monthly, index=False)
         runtime_summary.write_text(json.dumps(summary, indent=2), encoding="utf-8")
         del values
-        self._record_status("monthly EDA", "COMPUTED", runtime_monthly)
-        self._record_status("EDA", "COMPUTED", runtime_summary)
+        self._artifacts.record_status("monthly EDA", "COMPUTED", runtime_monthly)
+        self._artifacts.record_status("EDA", "COMPUTED", runtime_summary)
         summary["monthly_summary_path"] = str(runtime_monthly)
         return summary
 
@@ -457,7 +459,7 @@ class DataAnalyzer:
 
     # Data preparation helpers
     def _prepare_customers(self, *, force: bool) -> None:
-        source = None if force else self._find_reusable_csv(
+        source = None if force else self._artifacts.find_reusable_csv(
             "customers",
             self.runtime_customers_path,
             CUSTOMERS_CACHE_FILENAME,
@@ -481,10 +483,10 @@ class DataAnalyzer:
         self.customers = customers.loc[:, list(CUSTOMER_NORMALIZED_REQUIRED_COLUMNS)].copy()
         self.customers_path = self.runtime_customers_path
         self.customers.to_csv(self.customers_path, index=False)
-        self._record_status("customers", "COMPUTED", self.customers_path)
+        self._artifacts.record_status("customers", "COMPUTED", self.customers_path)
 
     def _prepare_articles(self, *, force: bool) -> None:
-        source = None if force else self._find_reusable_csv(
+        source = None if force else self._artifacts.find_reusable_csv(
             "articles",
             self.runtime_articles_path,
             ARTICLES_CACHE_FILENAME,
@@ -508,10 +510,10 @@ class DataAnalyzer:
         )
         self.articles_path = self.runtime_articles_path
         self.articles.to_csv(self.articles_path, index=False)
-        self._record_status("articles", "COMPUTED", self.articles_path)
+        self._artifacts.record_status("articles", "COMPUTED", self.articles_path)
 
     def _prepare_transactions(self, *, force: bool) -> int:
-        source = None if force else self._find_reusable_csv(
+        source = None if force else self._artifacts.find_reusable_csv(
             "transactions",
             self.runtime_transactions_path,
             TRANSACTIONS_CACHE_FILENAME,
@@ -519,7 +521,7 @@ class DataAnalyzer:
         )
         if source is not None:
             self.transactions_path = source
-            return self._csv_row_count(source)
+            return self._artifacts.csv_row_count(source)
         raw = self._require_raw_data_root()
         total_rows, first_chunk = 0, True
         for chunk in pd.read_csv(
@@ -547,7 +549,7 @@ class DataAnalyzer:
             first_chunk = False
             total_rows += len(frame)
         self.transactions_path = self.runtime_transactions_path
-        self._record_status("transactions", "COMPUTED", self.transactions_path)
+        self._artifacts.record_status("transactions", "COMPUTED", self.transactions_path)
         return total_rows
 
     def _load_summary(self, transaction_rows: int) -> dict[str, int]:
@@ -563,7 +565,7 @@ class DataAnalyzer:
 
     def _materialize_numeric_column(self, column: str) -> tuple[Path, int]:
         """Return a valid disk-backed numeric transaction column, building it only when needed."""
-        row_count = self._csv_row_count(self.transactions_path)
+        row_count = self._artifacts.csv_row_count(self.transactions_path)
         values_path = self.context.aggregate_root / f"{column}_values{".dat"}"
         expected_size = row_count * np.dtype("float64").itemsize
         if values_path.is_file() and values_path.stat().st_size == expected_size:
@@ -581,13 +583,17 @@ class DataAnalyzer:
 
     def _load_matching_iqr_cache(self, column: str, threshold: float) -> dict[str, float | int] | None:
         iqr_filename = IQR_OUTPUT_FILENAME_TEMPLATE.format(column=column)
-        cached = self._find_reusable_json("IQR", self.context.aggregate_root / iqr_filename, iqr_filename)
+        cached = self._artifacts.find_reusable_json(
+            "IQR",
+            self.context.aggregate_root / iqr_filename,
+            iqr_filename,
+        )
         if cached is None:
             return None
         result = json.loads(cached.read_text(encoding="utf-8"))
         if result.get("column") == column and result.get("threshold") == threshold:
             return {key: result[key] for key in IQR_STATISTIC_KEYS}
-        self._record_rejection("IQR", cached, "parameters do not match")
+        self._artifacts.record_rejection("IQR", cached, "parameters do not match")
         return None
 
     def _save_iqr_result(
@@ -599,7 +605,7 @@ class DataAnalyzer:
         result = {"column": column, "threshold": threshold, **statistics}
         output_path = self.context.aggregate_root / IQR_OUTPUT_FILENAME_TEMPLATE.format(column=column)
         output_path.write_text(json.dumps(result, indent=2), encoding="utf-8")
-        self._record_status("IQR", "COMPUTED", output_path)
+        self._artifacts.record_status("IQR", "COMPUTED", output_path)
         return {key: result[key] for key in IQR_STATISTIC_KEYS}
 
     @staticmethod
@@ -611,76 +617,6 @@ class DataAnalyzer:
             "label": label, "q1": float(q1), "med": float(median), "q3": float(q3),
             "whislo": float(np.min(inliers)), "whishi": float(np.max(inliers)),
         }
-
-    @staticmethod
-    def _csv_row_count(path: Path) -> int:
-        with path.open(encoding="utf-8") as source:
-            return sum(1 for _ in source) - 1
-
-    def _reuse_sources(self) -> list[tuple[str, Path]]:
-        sources = [("runtime cache", self.context.runtime_root)]
-        if self.context.precomputed_root is not None:
-            sources.append(("precomputed artifacts", self.context.precomputed_root))
-        return sources
-
-    def _find_reusable_csv(
-        self,
-        artifact: str,
-        runtime_path: Path,
-        filename: str,
-        required_columns: tuple[str, ...],
-    ) -> Path | None:
-        for source_name, root in self._reuse_sources():
-            candidates = [runtime_path] if source_name == "runtime cache" else sorted(root.rglob(filename))
-            for candidate in candidates:
-                valid, reason = self._valid_csv(candidate, required_columns)
-                if valid:
-                    self._record_status(artifact, "REUSED", candidate)
-                    return candidate
-                if candidate.exists():
-                    self._record_rejection(artifact, candidate, reason)
-        return None
-
-    def _find_reusable_json(self, artifact: str, runtime_path: Path, filename: str) -> Path | None:
-        for source_name, root in self._reuse_sources():
-            candidates = [runtime_path] if source_name == "runtime cache" else sorted(root.rglob(filename))
-            for candidate in candidates:
-                try:
-                    if candidate.is_file() and isinstance(json.loads(candidate.read_text(encoding="utf-8")), dict):
-                        self._record_status(artifact, "REUSED", candidate)
-                        return candidate
-                    if candidate.exists():
-                        self._record_rejection(artifact, candidate, "invalid JSON object")
-                except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
-                    self._record_rejection(artifact, candidate, f"unreadable JSON ({error})")
-        return None
-
-    @staticmethod
-    def _valid_csv(
-        path: Path,
-        required_columns: tuple[str, ...],
-    ) -> tuple[bool, str]:
-        if not path.is_file():
-            return False, "file does not exist"
-        try:
-            sample = pd.read_csv(path, nrows=1)
-        except (OSError, UnicodeDecodeError, pd.errors.EmptyDataError, ValueError) as error:
-            return False, f"unreadable CSV ({error})"
-        missing = set(required_columns).difference(sample.columns)
-        if missing:
-            return False, f"missing required columns: {sorted(missing)}"
-        if sample.empty:
-            return False, "CSV has no data rows"
-        return True, ""
-
-    def _record_status(self, artifact: str, status: str, path: Path) -> None:
-        self.artifact_status[artifact] = status
-        self.cache_messages.append(f"{artifact}: {status} ({path})")
-
-    def _record_rejection(self, artifact: str, path: Path, reason: str) -> None:
-        message = f"{artifact}: REJECTED {path} ({reason})"
-        self.cache_messages.append(message)
-        print(message)
 
     @staticmethod
     def _require(frame: pd.DataFrame, columns: list[str]) -> None:

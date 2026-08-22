@@ -11,6 +11,7 @@ from matplotlib import image as mpimg
 import nbformat
 
 from scripts.build_notebook import build_notebook
+from src._pipeline.artifacts import ArtifactStore
 from src import runtime
 from src.pipeline import DataAnalyzer, _calculate_iqr_statistics
 from src.runtime import discover_runtime
@@ -41,6 +42,40 @@ def write_fixture(raw: Path) -> None:
 
 
 class PipelineSmokeTest(unittest.TestCase):
+    def test_artifact_store_prefers_runtime_cache_over_precomputed(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            raw = root / "raw"
+            raw.mkdir()
+            write_fixture(raw)
+            precomputed = root / "precomputed"
+            precomputed.mkdir()
+            context = discover_runtime(
+                Path.cwd(),
+                {
+                    "HM_RAW_DATA_DIR": str(raw),
+                    "HM_RUNTIME_DIR": str(root / "runtime"),
+                    "HM_PRECOMPUTED_DIR": str(precomputed),
+                },
+            )
+            status: dict[str, str] = {}
+            messages: list[str] = []
+            store = ArtifactStore(context, status, messages)
+            runtime_path = context.processed_root / "probe.csv"
+            precomputed_path = precomputed / "probe.csv"
+            pd.DataFrame({"value": [1]}).to_csv(runtime_path, index=False)
+            pd.DataFrame({"value": [2]}).to_csv(precomputed_path, index=False)
+
+            source = store.find_reusable_csv(
+                "probe",
+                runtime_path,
+                "probe.csv",
+                ("value",),
+            )
+
+            self.assertEqual(source, runtime_path)
+            self.assertEqual(status["probe"], "REUSED")
+
     def test_data_analyzer_keeps_primary_public_facade_contract(self) -> None:
         self.assertEqual(DataAnalyzer.__module__, "src.pipeline")
         for method_name in (
