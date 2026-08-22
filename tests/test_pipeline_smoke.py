@@ -12,6 +12,7 @@ import nbformat
 
 from scripts.build_notebook import build_notebook
 from src._pipeline.artifacts import ArtifactStore
+from src._pipeline.loading import DataLoader
 from src import pipeline, runtime
 from src.pipeline import DataAnalyzer, _calculate_iqr_statistics
 from src.runtime import discover_runtime
@@ -42,6 +43,30 @@ def write_fixture(raw: Path) -> None:
 
 
 class PipelineSmokeTest(unittest.TestCase):
+    def test_data_loader_returns_normalized_customer_columns_without_imputation(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            raw = root / "raw"
+            raw.mkdir()
+            write_fixture(raw)
+            context = discover_runtime(
+                Path.cwd(),
+                {"HM_RAW_DATA_DIR": str(raw), "HM_RUNTIME_DIR": str(root / "runtime")},
+            )
+            status: dict[str, str] = {}
+            messages: list[str] = []
+            store = ArtifactStore(context, status, messages)
+            loader = DataLoader(context, store, chunksize=2)
+
+            customers, path = loader.load_customers(force=True)
+
+            self.assertEqual(path, context.processed_root / "customers.csv")
+            self.assertListEqual(
+                customers.columns.tolist(),
+                ["customer_id", "age", "club_member_status"],
+            )
+            self.assertEqual(int(customers["age"].isna().sum()), 1)
+
     def test_artifact_store_prefers_runtime_cache_over_precomputed(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -469,7 +494,7 @@ class PipelineSmokeTest(unittest.TestCase):
             self.assertEqual(len(rfm), 3)
             self.assertTrue(Path(eda["monthly_summary_path"]).is_file())
 
-    def test_load_data_reuses_caches_that_contain_formerly_removed_columns(self) -> None:
+    def test_load_data_rebuilds_caches_that_contain_removed_columns(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             raw = root / "raw"
@@ -497,13 +522,13 @@ class PipelineSmokeTest(unittest.TestCase):
             refreshed.load_data()
             product_features = refreshed.engineer_features()
 
-            self.assertEqual(refreshed.artifact_status["transactions"], "REUSED")
-            self.assertEqual(refreshed.artifact_status["customers"], "REUSED")
-            self.assertEqual(refreshed.artifact_status["articles"], "REUSED")
+            self.assertEqual(refreshed.artifact_status["transactions"], "COMPUTED")
+            self.assertEqual(refreshed.artifact_status["customers"], "COMPUTED")
+            self.assertEqual(refreshed.artifact_status["articles"], "COMPUTED")
             self.assertEqual(refreshed.artifact_status["product features"], "REUSED")
-            self.assertIn("sales_channel_id", pd.read_csv(refreshed.transactions_path, nrows=1).columns)
+            self.assertNotIn("sales_channel_id", pd.read_csv(refreshed.transactions_path, nrows=1).columns)
             self.assertNotIn("fashion_news_frequency", refreshed.customers.columns)
-            self.assertIn("category", refreshed.articles.columns)
+            self.assertNotIn("category", refreshed.articles.columns)
             self.assertIn("image_status", product_features.columns)
 
 

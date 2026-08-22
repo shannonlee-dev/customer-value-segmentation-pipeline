@@ -8,6 +8,7 @@ import pandas as pd
 from matplotlib import image as mpimg
 
 from ._pipeline.artifacts import ArtifactStore
+from ._pipeline.loading import DataLoader
 from ._pipeline.contracts import (
     ARTICLE_NORMALIZED_REQUIRED_COLUMNS,
     ARTICLE_RENAMES,
@@ -135,13 +136,26 @@ class DataAnalyzer:
             self.artifact_status,
             self.cache_messages,
         )
+        self._loader = DataLoader(context, self._artifacts, chunksize)
 
     def load_data(self, *, force: bool = False) -> dict[str, int]:
-        """Cache every source row as normalized CSV files; never sample analysis data."""
-        self._prepare_customers(force=force)
-        self._prepare_articles(force=force)
-        transaction_rows = self._prepare_transactions(force=force)
-        return self._load_summary(transaction_rows)
+        """Load and normalize full source data without performing imputation."""
+        self.customers, self.customers_path = self._loader.load_customers(
+            force=force
+        )
+        self.articles, self.articles_path = self._loader.load_articles(
+            force=force
+        )
+        self.transactions_path, transaction_rows = self._loader.load_transactions(
+            self.customers,
+            self.articles,
+            force=force,
+        )
+        return {
+            "transaction_rows": transaction_rows,
+            "customer_rows": len(self.customers),
+            "product_rows": len(self.articles),
+        }
 
     def handle_missing_values(
         self,
@@ -459,104 +473,6 @@ class DataAnalyzer:
             lines.append(f"{artifact}: {self.artifact_status.get(artifact, 'PENDING')}")
         return "\n".join(lines)
 
-    # Data preparation helpers
-    def _prepare_customers(self, *, force: bool) -> None:
-        source = None if force else self._artifacts.find_reusable_csv(
-            "customers",
-            self.runtime_customers_path,
-            CUSTOMERS_CACHE_FILENAME,
-            CUSTOMER_NORMALIZED_REQUIRED_COLUMNS,
-        )
-        if source is not None:
-            self.customers_path = source
-            self.customers = pd.read_csv(
-                source,
-                dtype={CUSTOMER_ID_COLUMN: STRING_DTYPE},
-            ).loc[:, list(CUSTOMER_NORMALIZED_REQUIRED_COLUMNS)].copy()
-            return
-        raw = self._require_raw_data_root()
-        customers = pd.read_csv(
-            raw / RAW_CUSTOMERS_FILENAME,
-            usecols=RAW_CUSTOMER_REQUIRED_COLUMNS,
-            dtype={CUSTOMER_ID_COLUMN: STRING_DTYPE},
-        )
-        self._require(customers, RAW_CUSTOMER_REQUIRED_COLUMNS)
-        self._validate_dimension_keys(customers, CUSTOMER_ID_COLUMN, RAW_CUSTOMERS_FILENAME)
-        self.customers = customers.loc[:, list(CUSTOMER_NORMALIZED_REQUIRED_COLUMNS)].copy()
-        self.customers_path = self.runtime_customers_path
-        self.customers.to_csv(self.customers_path, index=False)
-        self._artifacts.record_status("customers", "COMPUTED", self.customers_path)
-
-    def _prepare_articles(self, *, force: bool) -> None:
-        source = None if force else self._artifacts.find_reusable_csv(
-            "articles",
-            self.runtime_articles_path,
-            ARTICLES_CACHE_FILENAME,
-            ARTICLE_NORMALIZED_REQUIRED_COLUMNS,
-        )
-        if source is not None:
-            self.articles_path = source
-            self.articles = pd.read_csv(source, dtype={PRODUCT_ID_COLUMN: STRING_DTYPE})
-            return
-        raw = self._require_raw_data_root()
-        articles = pd.read_csv(
-            raw / RAW_ARTICLES_FILENAME,
-            usecols=RAW_ARTICLE_REQUIRED_COLUMNS,
-            dtype={RAW_ARTICLE_ID_COLUMN: STRING_DTYPE},
-        )
-        self._require(articles, RAW_ARTICLE_REQUIRED_COLUMNS)
-        self._validate_dimension_keys(articles, RAW_ARTICLE_ID_COLUMN, RAW_ARTICLES_FILENAME)
-        self.articles = articles.rename(columns=ARTICLE_RENAMES)
-        self.articles[IMAGE_PATH_COLUMN] = self.articles[PRODUCT_ID_COLUMN].map(
-            lambda value: f"{IMAGE_DIRECTORY}/{value[:3]}/{value}{".jpg"}"
-        )
-        self.articles_path = self.runtime_articles_path
-        self.articles.to_csv(self.articles_path, index=False)
-        self._artifacts.record_status("articles", "COMPUTED", self.articles_path)
-
-    def _prepare_transactions(self, *, force: bool) -> int:
-        source = None if force else self._artifacts.find_reusable_csv(
-            "transactions",
-            self.runtime_transactions_path,
-            TRANSACTIONS_CACHE_FILENAME,
-            TRANSACTION_NORMALIZED_REQUIRED_COLUMNS,
-        )
-        if source is not None:
-            self.transactions_path = source
-            return self._artifacts.csv_row_count(source)
-        raw = self._require_raw_data_root()
-        total_rows, first_chunk = 0, True
-        for chunk in pd.read_csv(
-            raw / RAW_TRANSACTIONS_FILENAME,
-            usecols=RAW_TRANSACTION_REQUIRED_COLUMNS,
-            dtype=RAW_TRANSACTION_DTYPES,
-            chunksize=self.chunksize,
-        ):
-            self._require(chunk, RAW_TRANSACTION_REQUIRED_COLUMNS)
-            if chunk[[CUSTOMER_ID_COLUMN, RAW_ARTICLE_ID_COLUMN]].isna().any().any():
-                raise ValueError("transactions_train.csv contains missing identifiers")
-            if not chunk[CUSTOMER_ID_COLUMN].isin(self.customers[CUSTOMER_ID_COLUMN]).all():
-                raise ValueError("transactions_train.csv references an unknown customer")
-            if not chunk[RAW_ARTICLE_ID_COLUMN].isin(self.articles[PRODUCT_ID_COLUMN]).all():
-                raise ValueError("transactions_train.csv references an unknown article")
-            frame = chunk.rename(columns=TRANSACTION_RENAMES)
-            frame[ORDER_DATE_COLUMN] = pd.to_datetime(frame[ORDER_DATE_COLUMN], errors=STRICT_PARSING_ERRORS)
-            frame[UNIT_PRICE_COLUMN] = pd.to_numeric(frame[UNIT_PRICE_COLUMN], errors=STRICT_PARSING_ERRORS)
-            frame.to_csv(
-                self.runtime_transactions_path,
-                mode=CSV_WRITE_MODE if first_chunk else CSV_APPEND_MODE,
-                header=first_chunk,
-                index=False,
-            )
-            first_chunk = False
-            total_rows += len(frame)
-        self.transactions_path = self.runtime_transactions_path
-        self._artifacts.record_status("transactions", "COMPUTED", self.transactions_path)
-        return total_rows
-
-    def _load_summary(self, transaction_rows: int) -> dict[str, int]:
-        return {"transaction_rows": transaction_rows, "customer_rows": len(self.customers), "product_rows": len(self.articles)}
-
     def _require_raw_data_root(self) -> Path:
         if self.context.raw_data_root is None:
             raise ValueError(
@@ -619,14 +535,3 @@ class DataAnalyzer:
             "label": label, "q1": float(q1), "med": float(median), "q3": float(q3),
             "whislo": float(np.min(inliers)), "whishi": float(np.max(inliers)),
         }
-
-    @staticmethod
-    def _require(frame: pd.DataFrame, columns: list[str]) -> None:
-        missing = set(columns).difference(frame.columns)
-        if missing:
-            raise ValueError(f"Missing columns: {sorted(missing)}")
-
-    @staticmethod
-    def _validate_dimension_keys(frame: pd.DataFrame, column: str, filename: str) -> None:
-        if frame[column].isna().any() or frame[column].duplicated().any():
-            raise ValueError(f"{filename} has missing or duplicate {column} values")
