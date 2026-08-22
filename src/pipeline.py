@@ -21,7 +21,7 @@ MEMMAP_WRITE_MODE = "w+"
 TRANSACTIONS_CACHE_FILENAME = "transactions.csv"
 CUSTOMERS_CACHE_FILENAME = "customers.csv"
 ARTICLES_CACHE_FILENAME = "articles.csv"
-IMAGE_FEATURES_CACHE_FILENAME = "product_images.csv"
+PRODUCT_FEATURES_CACHE_FILENAME = "product_features.csv"
 RFM_OUTPUT_FILENAME = "rfm.csv"
 IQR_OUTPUT_FILENAME_TEMPLATE = "iqr_{column}.json"
 EDA_SUMMARY_FILENAME = "eda_summary.json"
@@ -57,7 +57,7 @@ RAW_ARTICLE_REQUIRED_COLUMNS = (RAW_ARTICLE_ID_COLUMN, RAW_PRODUCT_NAME_COLUMN)
 TRANSACTION_RENAMES = {RAW_DATE_COLUMN: ORDER_DATE_COLUMN, RAW_ARTICLE_ID_COLUMN: PRODUCT_ID_COLUMN, RAW_PRICE_COLUMN: UNIT_PRICE_COLUMN}
 ARTICLE_RENAMES = {RAW_ARTICLE_ID_COLUMN: PRODUCT_ID_COLUMN, RAW_PRODUCT_NAME_COLUMN: PRODUCT_NAME_COLUMN}
 
-# Data-quality and image-feature policies
+# Data-quality and product-feature policies
 DEFAULT_MISSING_VALUE_STRATEGY = "median"
 SUPPORTED_MISSING_VALUE_STRATEGIES = ("median", "mean")
 IMAGE_DIRECTORY = "images"
@@ -134,12 +134,12 @@ class DataAnalyzer:
         self.runtime_transactions_path = context.processed_root / TRANSACTIONS_CACHE_FILENAME
         self.runtime_customers_path = context.processed_root / CUSTOMERS_CACHE_FILENAME
         self.runtime_articles_path = context.processed_root / ARTICLES_CACHE_FILENAME
-        self.runtime_images_path = context.feature_root / IMAGE_FEATURES_CACHE_FILENAME
+        self.runtime_product_features_path = context.feature_root / PRODUCT_FEATURES_CACHE_FILENAME
         self.runtime_rfm_path = context.aggregate_root / RFM_OUTPUT_FILENAME
         self.transactions_path = self.runtime_transactions_path
         self.customers_path = self.runtime_customers_path
         self.articles_path = self.runtime_articles_path
-        self.images_path = self.runtime_images_path
+        self.product_features_path = self.runtime_product_features_path
         self.rfm_path = self.runtime_rfm_path
         self.customers: pd.DataFrame | None = None
         self.articles: pd.DataFrame | None = None
@@ -174,39 +174,39 @@ class DataAnalyzer:
         }
 
     def engineer_features(self, *, force: bool = False) -> pd.DataFrame:
-        """Reuse cached product features or calculate text and image features once."""
+        """Reuse cached product features or calculate them once."""
         source = None if force else self._find_reusable_csv(
-            "image features",
-            self.runtime_images_path,
-            IMAGE_FEATURES_CACHE_FILENAME,
+            "product features",
+            self.runtime_product_features_path,
+            PRODUCT_FEATURES_CACHE_FILENAME,
             IMAGE_FEATURE_REQUIRED_COLUMNS,
         )
         if source is not None:
-            self.images_path = source
+            self.product_features_path = source
             return pd.read_csv(source, dtype={PRODUCT_ID_COLUMN: STRING_DTYPE})
         if self.articles is None:
             self.articles = pd.read_csv(self.articles_path, dtype={PRODUCT_ID_COLUMN: STRING_DTYPE})
         raw = self._require_raw_data_root()
         records = [
-            self._extract_image_features(raw, product_id, product_name, image_path)
+            self._extract_product_features(raw, product_id, product_name, image_path)
             for product_id, product_name, image_path in self.articles[
                 [PRODUCT_ID_COLUMN, PRODUCT_NAME_COLUMN, IMAGE_PATH_COLUMN]
             ].itertuples(index=False)
         ]
         features = pd.DataFrame.from_records(records)
-        self.images_path = self.runtime_images_path
-        features.to_csv(self.images_path, index=False)
-        self._record_status("image features", "COMPUTED", self.images_path)
+        self.product_features_path = self.runtime_product_features_path
+        features.to_csv(self.product_features_path, index=False)
+        self._record_status("product features", "COMPUTED", self.product_features_path)
         return features
 
     @staticmethod
-    def _extract_image_features(
+    def _extract_product_features(
         raw_data_root: Path,
         product_id: object,
         product_name: object,
         image_path: str,
     ) -> dict[str, object]:
-        """Calculate the text and pixel features for one product image."""
+        """Calculate the text and pixel features for one product."""
         record: dict[str, object] = {
             PRODUCT_ID_COLUMN: product_id,
             IMAGE_PATH_COLUMN: image_path,
@@ -406,8 +406,8 @@ class DataAnalyzer:
         denominator = np.sqrt((count * sum_x2 - sum_x ** 2) * (count * sum_y2 - sum_y ** 2))
         price_age_correlation = 0.0 if denominator == 0 else float((count * sum_xy - sum_x * sum_y) / denominator)
 
-        images = self.engineer_features(force=force)
-        image_text_correlation = float(images[[IMAGE_MEAN_COLUMN, PRODUCT_NAME_LENGTH_COLUMN]].corr().iloc[0, 1])
+        product_features = self.engineer_features(force=force)
+        image_text_correlation = float(product_features[[IMAGE_MEAN_COLUMN, PRODUCT_NAME_LENGTH_COLUMN]].corr().iloc[0, 1])
         histogram_counts, histogram_edges = np.histogram(values, bins=EDA_HISTOGRAM_BIN_COUNT)
         summary = {
             "price_statistics": price_statistics,
@@ -432,7 +432,7 @@ class DataAnalyzer:
         lines = [f"Runtime mode: {'PRECOMPUTED FULL-DATA ARTIFACTS' if self.context.precomputed_root else self.context.runtime_name.upper()}"]
         if self.context.precomputed_root is not None:
             lines.append(f"Precomputed root: {self.context.precomputed_root}")
-        for artifact in ("transactions", "customers", "articles", "image features", "IQR", "RFM"):
+        for artifact in ("transactions", "customers", "articles", "product features", "IQR", "RFM"):
             lines.append(f"{artifact}: {self.artifact_status.get(artifact, 'PENDING')}")
         return "\n".join(lines)
 

@@ -81,7 +81,7 @@ class PipelineSmokeTest(unittest.TestCase):
             raw.mkdir()
             write_fixture(raw)
             context = discover_runtime(
-                Path.cwd(),
+                root,
                 {"HM_RAW_DATA_DIR": str(raw), "HM_RUNTIME_DIR": str(root / "runtime")},
             )
             analyzer = DataAnalyzer(context, chunksize=2)
@@ -172,7 +172,7 @@ class PipelineSmokeTest(unittest.TestCase):
         self.assertEqual(DataAnalyzer.classify_segment(1, 4, 4), "Churned")
         self.assertEqual(DataAnalyzer.classify_segment(2, 2, 2), "Potential")
 
-    def test_extract_image_features_calculates_text_and_pixel_features(self) -> None:
+    def test_extract_product_features_calculates_text_and_pixel_features(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             raw = root / "raw"
@@ -184,7 +184,7 @@ class PipelineSmokeTest(unittest.TestCase):
             )
             analyzer = DataAnalyzer(context)
 
-            record = analyzer._extract_image_features(raw, "0010000001", "Item one", "images/001/0010000001.jpg")
+            record = analyzer._extract_product_features(raw, "0010000001", "Item one", "images/001/0010000001.jpg")
 
             self.assertEqual(record["product_name_length"], 8)
             self.assertTrue(np.isfinite(record["image_mean"]))
@@ -196,7 +196,7 @@ class PipelineSmokeTest(unittest.TestCase):
             precomputed = root / "precomputed"
             precomputed.mkdir()
             context = discover_runtime(
-                Path.cwd(),
+                root,
                 {"HM_PRECOMPUTED_DIR": str(precomputed), "HM_RUNTIME_DIR": str(root / "runtime")},
             )
             analyzer = DataAnalyzer(context)
@@ -229,9 +229,8 @@ class PipelineSmokeTest(unittest.TestCase):
             rendered = nbformat.read(notebook, as_version=4)
             code = "\n".join(cell.source for cell in rendered.cells if cell.cell_type == "code")
 
-            self.assertIn("product_features = image_features.copy()", code)
-            self.assertIn('product_features_path = context.feature_root / "product_images_enriched.csv"', code)
-            self.assertIn('name_lengths[["product_id", "product_name_length"]]', code)
+            self.assertIn("product_features = analyzer.engineer_features()", code)
+            self.assertIn('output_path = Path("/kaggle/working/product_features.csv")', code)
 
     def test_generated_notebook_preserves_an_explicit_precomputed_directory(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -299,22 +298,24 @@ class PipelineSmokeTest(unittest.TestCase):
             analyzer = DataAnalyzer(context, chunksize=2)
 
             summary = analyzer.load_data()
-            image_features = analyzer.engineer_features()
+            product_features = analyzer.engineer_features()
             iqr = analyzer.detect_outliers()
             rfm = analyzer.calculate_rfm()
             eda = analyzer.prepare_eda_artifacts()
 
             self.assertEqual(summary["transaction_rows"], 4)
-            self.assertEqual(len(image_features), 3)
+            self.assertEqual(len(product_features), 3)
+            self.assertEqual(analyzer.product_features_path.name, "product_features.csv")
+            self.assertTrue(analyzer.product_features_path.is_file())
             self.assertNotIn("sales_channel_id", pd.read_csv(analyzer.transactions_path, nrows=1).columns)
             self.assertNotIn("fashion_news_frequency", analyzer.customers.columns)
             self.assertNotIn("age_was_missing", analyzer.customers.columns)
             self.assertNotIn("category", analyzer.articles.columns)
-            self.assertNotIn("image_status", image_features.columns)
+            self.assertNotIn("image_status", product_features.columns)
             self.assertNotIn("product_name_length", analyzer.articles.columns)
-            self.assertIn("product_name_length", image_features.columns)
+            self.assertIn("product_name_length", product_features.columns)
             self.assertNotIn("product_name_length", pd.read_csv(analyzer.articles_path, nrows=1).columns)
-            self.assertIn("product_name_length", pd.read_csv(analyzer.images_path, nrows=1).columns)
+            self.assertIn("product_name_length", pd.read_csv(analyzer.product_features_path, nrows=1).columns)
             self.assertEqual(iqr["outlier_count"], 0)
             self.assertEqual(len(rfm), 3)
             self.assertTrue(Path(eda["monthly_summary_path"]).is_file())
@@ -337,7 +338,7 @@ class PipelineSmokeTest(unittest.TestCase):
                 (analyzer.transactions_path, "sales_channel_id"),
                 (analyzer.customers_path, "fashion_news_frequency"),
                 (analyzer.articles_path, "category"),
-                (analyzer.images_path, "image_status"),
+                (analyzer.product_features_path, "image_status"),
             ):
                 frame = pd.read_csv(path)
                 frame[column] = "obsolete"
@@ -345,16 +346,16 @@ class PipelineSmokeTest(unittest.TestCase):
 
             refreshed = DataAnalyzer(context, chunksize=2)
             refreshed.load_data()
-            image_features = refreshed.engineer_features()
+            product_features = refreshed.engineer_features()
 
             self.assertEqual(refreshed.artifact_status["transactions"], "REUSED")
             self.assertEqual(refreshed.artifact_status["customers"], "REUSED")
             self.assertEqual(refreshed.artifact_status["articles"], "REUSED")
-            self.assertEqual(refreshed.artifact_status["image features"], "REUSED")
+            self.assertEqual(refreshed.artifact_status["product features"], "REUSED")
             self.assertIn("sales_channel_id", pd.read_csv(refreshed.transactions_path, nrows=1).columns)
             self.assertIn("fashion_news_frequency", refreshed.customers.columns)
             self.assertIn("category", refreshed.articles.columns)
-            self.assertIn("image_status", image_features.columns)
+            self.assertIn("image_status", product_features.columns)
 
 
 if __name__ == "__main__":

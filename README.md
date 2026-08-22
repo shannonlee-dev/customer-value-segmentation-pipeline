@@ -12,7 +12,7 @@
 
 ## 구조
 
-`src/pipeline.py`의 `DataAnalyzer`가 public facade다. 전체 통합 거래 DataFrame은 만들지 않고 `transactions`, `customers`, `articles`, `image_features`를 각각의 grain으로 유지한다. 필요한 분석에서만 join하며, 노트북의 Dataset Inventory가 실행 시점의 shape와 schema를 보여준다.
+`src/pipeline.py`의 `DataAnalyzer`가 public facade다. 전체 통합 거래 DataFrame은 만들지 않고 `transactions`, `customers`, `articles`, `product_features`를 각각의 grain으로 유지한다. 필요한 분석에서만 join하며, 노트북의 Dataset Inventory가 실행 시점의 shape와 schema를 보여준다.
 
 - `load_data()` — 전체 거래 chunk 처리와 스키마 검증
 - `handle_missing_values()` — 고객 단위 회원상태 그룹 중앙값 대치
@@ -56,7 +56,7 @@ HM_PRECOMPUTED_DIR=/external/hm-precomputed .venv/bin/jupyter notebook notebooks
 1. 이 저장소와 이전 full-data Kaggle Notebook Version output을 Input으로 추가한다. 기본 경로가 다르면 `HM_PRECOMPUTED_DIR=/kaggle/input/...`를 설정한다.
 2. H&M competition raw input은 artifact 누락 또는 `force=True` 재계산 때만 추가하면 된다.
 3. `notebooks/analysis_report.ipynb`를 열고 **Run All** 한다.
-4. 출력의 `transactions`, `image features`, `IQR`, `RFM`, `EDA`가 `REUSED`인지 확인한다.
+4. 출력의 `transactions`, `product features`, `IQR`, `RFM`, `EDA`가 `REUSED`인지 확인한다.
 5. 여섯 차트와 `Final execution summary`를 확인한 뒤 **Save Version** 한다. `/kaggle/input`에는 쓰지 않고 결과는 `/kaggle/working`에만 생성된다.
 
 실데이터를 이 저장소 환경에서 실행하거나 수치를 미리 주장하지 않는다.

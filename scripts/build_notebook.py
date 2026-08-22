@@ -154,13 +154,13 @@ print(f"실행 산출물 루트: {context.runtime_root}")
 print("분석 범위: 전체 데이터셋")"""),
         new_markdown_cell("""## 전체 데이터 준비와 멀티모달 특징
 
-거래는 Pandas chunk로 읽습니다. `transactions`, `customers`, `articles`, `image_features`는 각각의 자연스러운 grain을 유지합니다. 이렇게 하면 수천만 거래 행에 고객·상품 속성을 반복하지 않으며, 통계에 필요한 컬럼만 필요한 시점에 chunk 단위로 join합니다.
+거래는 Pandas chunk로 읽습니다. `transactions`, `customers`, `articles`, `product_features`는 각각의 자연스러운 grain을 유지합니다. 이렇게 하면 수천만 거래 행에 고객·상품 속성을 반복하지 않으며, 통계에 필요한 컬럼만 필요한 시점에 chunk 단위로 join합니다.
 
 고객 연령은 고객 grain에서 한 번만 대치합니다. 중앙값은 왜곡된 분포에서 평균보다 덜 민감한 대표값이며, `club_member_status`는 재현 가능한 고객 그룹을 제공합니다. 그룹에 알려진 연령이 없으면 전체 중앙값을 fallback으로 사용합니다. 이 방법은 고객을 보존하지만 분산을 줄이고 그룹 차이를 과장할 수 있습니다.
 
 각 이미지 파일은 `matplotlib.image.imread`로 읽습니다. 파일 loop는 I/O만 수행하고, 이미지 내부 계산은 decode된 전체 배열에 `np.mean`, `np.std`를 적용하는 NumPy vectorized 연산입니다. 이미지를 하나의 전역 tensor로 쌓지 않습니다."""),
         new_code_cell("""summary = analyzer.load_data()
-image_features = analyzer.engineer_features()
+product_features = analyzer.engineer_features()
 iqr = analyzer.detect_outliers()
 recompute_artifacts = context.raw_data_root is not None
 rfm = analyzer.calculate_rfm(force=recompute_artifacts)
@@ -170,23 +170,12 @@ print(analyzer.format_cache_report())
 transaction_schema = pd.read_csv(analyzer.transactions_path, nrows=0)
 customers = pd.read_csv(analyzer.customers_path, dtype={"customer_id": "string"})
 articles = pd.read_csv(analyzer.articles_path, dtype={"product_id": "string"})
-product_features = image_features.copy()
-if "product_name_length" not in product_features.columns:
-    name_lengths = articles[["product_id", "product_name"]].copy()
-    name_lengths["product_name_length"] = name_lengths["product_name"].fillna("").str.len()
-    product_features = product_features.merge(
-        name_lengths[["product_id", "product_name_length"]],
-        on="product_id",
-        how="left",
-    )
-product_features_path = context.feature_root / "product_images_enriched.csv"
-product_features.to_csv(product_features_path, index=False)
-print(f"이미지·텍스트 특징 저장: {product_features_path}")
+print(f"상품 특징 저장: {analyzer.product_features_path}")
 inventory = pd.DataFrame([
     ["transactions", "거래 1건", f"{summary['transaction_rows']:,} × {len(transaction_schema.columns)}", "날짜, 수치, 식별자", "RFM과 시계열"],
     ["customers", "고객 1명", f"{len(customers):,} × {len(customers.columns)}", "수치, 범주, 식별자", "연령과 회원 정보"],
     ["articles", "상품 1개", f"{len(articles):,} × {len(articles.columns)}", "텍스트, 식별자", "텍스트 특징"],
-    ["image_features", "상품 이미지 1개", f"{len(image_features):,} × {len(image_features.columns)}", "수치, 식별자", "전체 이미지 평균/표준편차"],
+    ["product_features", "상품 1개", f"{len(product_features):,} × {len(product_features.columns)}", "수치, 식별자", "이미지 통계와 상품명 길이"],
 ], columns=["원천", "단위", "크기", "주요 자료형", "역할"])
 display(Markdown("## 데이터셋 구성"))
 display(inventory)
@@ -344,32 +333,13 @@ print("처리한 상품 수:", summary["product_rows"])
 print("IQR 이상치 수:", iqr["outlier_count"])
 print("총 실행 시간(초):", round(time.monotonic() - started, 1))"""),
     ]
-    cells.insert(5, new_code_cell("""image_path = analyzer.images_path
-article_path = analyzer.articles_path
-output_path = Path("/kaggle/working/product_images_enriched.csv")
+    cells.insert(5, new_code_cell("""output_path = Path("/kaggle/working/product_features.csv")
 
-images = pd.read_csv(image_path, dtype={"product_id": "string"})
-articles = pd.read_csv(article_path, dtype={"product_id": "string"})
-
-if "product_name_length" not in articles.columns:
-    articles["product_name_length"] = articles["product_name"].fillna("").str.len()
-if "product_name_length" in images.columns:
-    images = images.drop(columns=["product_name_length"])
-
-product_images_enriched = images.merge(
-    articles[["product_id", "product_name_length"]],
-    on="product_id",
-    how="left",
-)
-
-product_images_enriched.to_csv(output_path, index=False)
+product_features.to_csv(output_path, index=False)
 
 print(f"저장 완료: {output_path}")
-print(product_images_enriched.columns.tolist())
-product_images_enriched.head()
-
-image_features = product_images_enriched
-product_features = product_images_enriched"""))
+print(product_features.columns.tolist())
+product_features.head()"""))
     notebook = new_notebook(cells=cells)
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)

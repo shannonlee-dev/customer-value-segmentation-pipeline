@@ -25,7 +25,7 @@ def inspect_source_notebook(path: Path) -> dict[str, int | str]:
         raise ValueError("Source notebook must be clean")
     if not all(marker in source for marker in REQUIRED_MARKERS):
         raise ValueError("Source notebook is missing full-data markers")
-    if any(token in source for token in ("feature_product_ids", "sampled_image_features", "cohort_size", "stable_customer_ids")):
+    if any(token in source for token in ("feature_product_ids", "sampled_product_features", "cohort_size", "stable_customer_ids")):
         raise ValueError("Source notebook contains sampled analysis")
     return {"status": "PASS", "cell_count": len(notebook.cells)}
 
@@ -81,11 +81,10 @@ class NotebookContractTest(unittest.TestCase):
         export_cells = [
             cell.source
             for cell in notebook.cells
-            if cell.cell_type == "code" and "product_images_enriched = images.merge(" in cell.source
+            if cell.cell_type == "code" and 'output_path = Path("/kaggle/working/product_features.csv")' in cell.source
         ]
         self.assertEqual(len(export_cells), 1)
-        self.assertIn("image_path = analyzer.images_path", export_cells[0])
-        self.assertIn('output_path = Path("/kaggle/working/product_images_enriched.csv")', export_cells[0])
+        self.assertIn("product_features.to_csv(output_path, index=False)", export_cells[0])
 
     def test_analysis_notebook_marks_iqr_outliers_and_explains_each_chart(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -136,10 +135,10 @@ class NotebookContractTest(unittest.TestCase):
         self.assertNotIn("DataAnalyzer", code)
         self.assertNotIn("src.reporting", code)
         self.assertNotIn("customer-value-segmentation-pipeline/src", code)
-        self.assertIn('if "product_name_length" not in articles.columns', code)
-        self.assertIn('articles[["product_id", "product_name_length"]]', code)
-        self.assertIn('output_path = Path("/kaggle/working/product_images_enriched.csv")', code)
-        self.assertIn("product_images_enriched = images.merge(", code)
+        self.assertNotIn('if "product_name_length" not in articles.columns', code)
+        self.assertNotIn('articles[["product_id", "product_name_length"]]', code)
+        self.assertIn('output_path = Path("/kaggle/working/product_features.csv")', code)
+        self.assertIn('product_features_path = PRECOMPUTED_ROOT / "features" / "product_features" / "product_features.csv"', code)
         self.assertIn('print(f"저장 완료: {output_path}")', code)
         self.assertIn("available_fonts", code)
         self.assertIn('plt.title(CHART_TEXT["price_title"])', code)
@@ -157,8 +156,7 @@ class NotebookContractTest(unittest.TestCase):
         export_cells = [
             cell.source
             for cell in notebook.cells
-            if cell.cell_type == "code" and "product_images_enriched = images.merge(" in cell.source
+            if cell.cell_type == "code" and 'output_path = Path("/kaggle/working/product_features.csv")' in cell.source
         ]
         self.assertEqual(len(export_cells), 1)
-        self.assertIn('output_path = Path("/kaggle/working/product_images_enriched.csv")', export_cells[0])
-        self.assertIn("product_images_enriched.head()", export_cells[0])
+        self.assertIn("product_features.head()", export_cells[0])

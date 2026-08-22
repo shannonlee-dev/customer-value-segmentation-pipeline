@@ -32,7 +32,7 @@ required = [
     PRECOMPUTED_ROOT / "processed" / "transactions.csv",
     PRECOMPUTED_ROOT / "processed" / "customers.csv",
     PRECOMPUTED_ROOT / "processed" / "articles.csv",
-    PRECOMPUTED_ROOT / "features" / "product_images" / "product_images.csv",
+    PRECOMPUTED_ROOT / "features" / "product_features" / "product_features.csv",
     PRECOMPUTED_ROOT / "aggregates" / "rfm.csv",
     PRECOMPUTED_ROOT / "aggregates" / "monthly_summary.csv",
     PRECOMPUTED_ROOT / "aggregates" / "iqr_unit_price.json",
@@ -118,33 +118,17 @@ print("분석 범위: 전체 데이터셋")"""
     notebook.cells[4].source = """eda = json.loads((PRECOMPUTED_ROOT / "aggregates" / "eda_summary.json").read_text(encoding="utf-8"))
 iqr = json.loads((PRECOMPUTED_ROOT / "aggregates" / "iqr_unit_price.json").read_text(encoding="utf-8"))
 rfm = pd.read_csv(PRECOMPUTED_ROOT / "aggregates" / "rfm.csv", dtype={"customer_id": "string"})
-image_path = PRECOMPUTED_ROOT / "features" / "product_images" / "product_images.csv"
+product_features_path = PRECOMPUTED_ROOT / "features" / "product_features" / "product_features.csv"
 article_path = PRECOMPUTED_ROOT / "processed" / "articles.csv"
+product_features = pd.read_csv(product_features_path, dtype={"product_id": "string"})"""
 
-images = pd.read_csv(image_path, dtype={"product_id": "string"})
-articles = pd.read_csv(article_path, dtype={"product_id": "string"})"""
+    notebook.cells.insert(5, new_code_cell("""output_path = Path("/kaggle/working/product_features.csv")
 
-    notebook.cells.insert(5, new_code_cell("""output_path = Path("/kaggle/working/product_images_enriched.csv")
-
-if "product_name_length" not in articles.columns:
-    articles["product_name_length"] = articles["product_name"].fillna("").str.len()
-if "product_name_length" in images.columns:
-    images = images.drop(columns=["product_name_length"])
-
-product_images_enriched = images.merge(
-    articles[["product_id", "product_name_length"]],
-    on="product_id",
-    how="left",
-)
-
-product_images_enriched.to_csv(output_path, index=False)
+product_features.to_csv(output_path, index=False)
 
 print(f"저장 완료: {output_path}")
-print(product_images_enriched.columns.tolist())
-product_images_enriched.head()
-
-image_features = product_images_enriched
-product_features = product_images_enriched
+print(product_features.columns.tolist())
+product_features.head()
 monthly_value = pd.read_csv(PRECOMPUTED_ROOT / "aggregates" / "monthly_summary.csv")
 transaction_path = PRECOMPUTED_ROOT / "processed" / "transactions.csv"
 
@@ -153,13 +137,13 @@ article_schema = pd.read_csv(article_path, nrows=0)
 summary = {
     "transaction_rows": int(eda["price_statistics"]["count"]),
     "customer_rows": len(rfm),
-    "product_rows": len(image_features),
+    "product_rows": len(product_features),
 }
 inventory = pd.DataFrame([
     ["transactions", "거래 1건", f"{summary['transaction_rows']:,} × {len(transaction_schema.columns)}", "날짜, 수치, 식별자", "RFM과 시계열"],
     ["customers", "고객 1명", f"{summary['customer_rows']:,}", "수치, 범주, 식별자", "연령과 회원 정보"],
-    ["articles", "상품 1개", f"{summary['product_rows']:,} × {len(article_schema.columns)}", "텍스트, 식별자", "텍스트 특징"],
-    ["image_features", "상품 이미지 1개", f"{len(image_features):,} × {len(image_features.columns)}", "수치, 식별자", "전체 이미지 평균/표준편차"],
+    ["articles", "상품 1개", f"{summary['product_rows']:,} × {len(article_schema.columns)}", "텍스트, 식별자", "상품명과 이미지 경로"],
+    ["product_features", "상품 1개", f"{len(product_features):,} × {len(product_features.columns)}", "수치, 식별자", "이미지 통계와 상품명 길이"],
 ], columns=["원천", "단위", "크기", "주요 자료형", "역할"])
 display(Markdown("## 데이터셋 구성"))
 display(inventory)
@@ -174,7 +158,6 @@ print("테이블은 거래·고객·상품·상품 이미지 단위로 정규화
 print("이미지 배열 처리: 사전계산 결과 재사용")"""))
 
     chart_code = notebook.cells[7].source
-    chart_code = chart_code.replace("product_features = image_features\n", "")
     start = chart_code.index("monthly_summary_path =")
     end = chart_code.index("def transaction_feature_correlation")
     notebook.cells[7].source = (

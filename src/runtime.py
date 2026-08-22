@@ -66,7 +66,7 @@ def discover_runtime(
         else (Path(kaggle_root) / "working" / "hm-customer-value" if runtime_name == "kaggle" else root / "data" / "runtime")
     )
     processed_root = runtime_root / "processed"
-    feature_root = runtime_root / "features" / "product_images"
+    feature_root = runtime_root / "features" / "product_features"
     aggregate_root = runtime_root / "aggregates"
     artifact_root = runtime_root / "artifacts"
     for path in (processed_root, feature_root, aggregate_root, artifact_root):

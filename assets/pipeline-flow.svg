@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1120" height="810" viewBox="0 0 1120 810" role="img" aria-labelledby="title desc">
   <title id="title">H&amp;M customer value segmentation pipeline</title>
-  <desc id="desc">Raw H&amp;M data flows through transaction normalization, age imputation, image features, IQR and RFM analysis into EDA reporting, a Jupyter notebook, and business insights.</desc>
+  <desc id="desc">Raw H&amp;M data flows through transaction normalization, age imputation, product features, IQR and RFM analysis into EDA reporting, a Jupyter notebook, and business insights.</desc>
   <defs>
     <marker id="arrow" markerWidth="10" markerHeight="10" refX="5" refY="5" orient="auto-start-reverse">
       <path d="M 0 0 L 10 5 L 0 10 z" fill="#1f2937"/>
@@ -25,7 +25,7 @@
 
   <text class="label small" x="165" y="315">chunk 정규화</text>
   <text class="label small" x="560" y="315">age imputation</text>
-  <text class="label small" x="955" y="315">image features</text>
+  <text class="label small" x="955" y="315">product features</text>
   <path class="line" d="M165 335v55 M955 335v55"/>
   <path class="line" d="M165 390h205v34 M955 390v34"/>
   <path class="line" marker-end="url(#arrow)" d="M165 424v42 M370 424v42 M955 424v42"/>
