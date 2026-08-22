@@ -387,6 +387,33 @@ class PipelineSmokeTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "no raw H&M dataset"):
                 analyzer.engineer_features(force=True)
 
+    def test_engineer_features_reuses_portable_cache_without_articles(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            precomputed = root / "precomputed"
+            precomputed.mkdir()
+            pd.DataFrame(
+                [["0010000001", "images/001/0010000001.jpg", 8, 0.2, 0.0]],
+                columns=[
+                    "product_id",
+                    "image_path",
+                    "product_name_length",
+                    "image_mean",
+                    "image_std",
+                ],
+            ).to_csv(precomputed / "product_features.csv", index=False)
+            context = discover_runtime(
+                root,
+                {"HM_PRECOMPUTED_DIR": str(precomputed), "HM_RUNTIME_DIR": str(root / "runtime")},
+            )
+
+            analyzer = DataAnalyzer(context)
+            product_features = analyzer.engineer_features()
+
+            self.assertEqual(analyzer.artifact_status["product features"], "REUSED")
+            self.assertEqual(analyzer.product_features_path, precomputed / "product_features.csv")
+            self.assertEqual(product_features.loc[0, "product_id"], "0010000001")
+
     def test_discover_runtime_accepts_a_local_precomputed_directory(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -531,11 +558,11 @@ class PipelineSmokeTest(unittest.TestCase):
             self.assertEqual(refreshed.artifact_status["transactions"], "COMPUTED")
             self.assertEqual(refreshed.artifact_status["customers"], "COMPUTED")
             self.assertEqual(refreshed.artifact_status["articles"], "COMPUTED")
-            self.assertEqual(refreshed.artifact_status["product features"], "REUSED")
+            self.assertEqual(refreshed.artifact_status["product features"], "COMPUTED")
             self.assertNotIn("sales_channel_id", pd.read_csv(refreshed.transactions_path, nrows=1).columns)
             self.assertNotIn("fashion_news_frequency", refreshed.customers.columns)
             self.assertNotIn("category", refreshed.articles.columns)
-            self.assertIn("image_status", product_features.columns)
+            self.assertNotIn("image_status", product_features.columns)
 
 
 if __name__ == "__main__":

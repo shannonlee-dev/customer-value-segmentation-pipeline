@@ -187,6 +187,10 @@ class DataAnalyzer:
 
     def engineer_features(self, *, force: bool = False) -> pd.DataFrame:
         """Reuse cached product features or calculate them once."""
+        reusable = self._feature_engineer.find_reusable(force=force)
+        if reusable is not None:
+            features, self.product_features_path = reusable
+            return features
         if self.articles is None:
             self.articles = pd.read_csv(
                 self.articles_path,
@@ -194,7 +198,7 @@ class DataAnalyzer:
             )
         features, self.product_features_path = self._feature_engineer.build(
             self.articles,
-            force=force,
+            force=True,
         )
         return features
 

@@ -45,17 +45,9 @@ class ProductFeatureEngineer:
         force: bool,
     ) -> tuple[pd.DataFrame, Path]:
         """Return reusable product features or calculate them from raw images."""
-        source = None if force else self.artifacts.find_reusable_csv(
-            "product features",
-            self.runtime_product_features_path,
-            PRODUCT_FEATURES_CACHE_FILENAME,
-            IMAGE_FEATURE_REQUIRED_COLUMNS,
-        )
-        if source is not None:
-            return (
-                pd.read_csv(source, dtype={PRODUCT_ID_COLUMN: STRING_DTYPE}),
-                source,
-            )
+        reusable = self.find_reusable(force=force)
+        if reusable is not None:
+            return reusable
 
         raw = self._require_raw_data_root()
         records = [
@@ -72,6 +64,22 @@ class ProductFeatureEngineer:
             self.runtime_product_features_path,
         )
         return features, self.runtime_product_features_path
+
+    def find_reusable(self, *, force: bool) -> tuple[pd.DataFrame, Path] | None:
+        """Return a valid existing product-feature artifact when reuse is allowed."""
+        source = None if force else self.artifacts.find_reusable_csv(
+            "product features",
+            self.runtime_product_features_path,
+            PRODUCT_FEATURES_CACHE_FILENAME,
+            IMAGE_FEATURE_REQUIRED_COLUMNS,
+            forbidden_columns=("image_status",),
+        )
+        if source is not None:
+            return (
+                pd.read_csv(source, dtype={PRODUCT_ID_COLUMN: STRING_DTYPE}),
+                source,
+            )
+        return None
 
     @staticmethod
     def _extract_image_features(
