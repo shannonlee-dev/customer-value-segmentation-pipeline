@@ -55,6 +55,56 @@ PROJECT_ROOT = find_project_root()
 os.environ.setdefault("PROJECT_ROOT", str(PROJECT_ROOT))
 """
 
+CHART_STYLE_SOURCE = """KOREAN_CHART_TEXT = {
+    "price_title": "상대 가격 분포", "price_x": "상대 데이터셋 가격값", "count_y": "거래 건수",
+    "iqr_title": "IQR 필터링 전후 상대 가격", "iqr_x": "IQR 처리 상태", "segment_title": "RFM 세그먼트별 고객 수",
+    "segment_x": "RFM 세그먼트", "customer_y": "고객 수", "feature_title": "상품 이미지와 텍스트 특징 상관관계",
+    "feature_axis": "특징", "frequency_title": "고객 구매 빈도와 Monetary 값", "frequency_x": "고유 구매일 수",
+    "monetary_y": "합계 상대 데이터셋 값", "monthly_title": "월별 합계 상대 데이터셋 값", "month_x": "주문 월",
+}
+ENGLISH_CHART_TEXT = {
+    "price_title": "Relative Price Distribution", "price_x": "Relative dataset price value", "count_y": "Transaction count",
+    "iqr_title": "Relative Price Before vs After IQR Filtering", "iqr_x": "IQR treatment state", "segment_title": "RFM Segment Customer Counts",
+    "segment_x": "RFM segment", "customer_y": "Customer count", "feature_title": "Product Image and Text Feature Correlation",
+    "feature_axis": "Feature", "frequency_title": "Customer Purchase Frequency vs Monetary Value", "frequency_x": "Unique purchase dates",
+    "monetary_y": "Aggregate relative dataset value", "monthly_title": "Monthly Aggregate Relative Dataset Value", "month_x": "Order month",
+}
+
+required_glyphs = {
+    ord(character)
+    for label in KOREAN_CHART_TEXT.values()
+    for character in label
+    if not character.isascii()
+}
+preferred_families = (
+    "NanumGothic", "Noto Sans CJK KR", "Noto Sans KR", "Malgun Gothic",
+    "Apple SD Gothic Neo", "AppleGothic", "Noto Sans CJK JP",
+)
+font_entries = sorted(
+    matplotlib.font_manager.fontManager.ttflist,
+    key=lambda font: (
+        preferred_families.index(font.name) if font.name in preferred_families else len(preferred_families),
+        font.name,
+    ),
+)
+
+def supports_chart_glyphs(font):
+    try:
+        face = matplotlib.ft2font.FT2Font(font.fname)
+        return all(face.get_char_index(codepoint) for codepoint in required_glyphs)
+    except (OSError, RuntimeError):
+        return False
+
+korean_font = next((font.name for font in font_entries if supports_chart_glyphs(font)), None)
+if korean_font:
+    matplotlib.rcParams["font.family"] = korean_font
+    matplotlib.rcParams["axes.unicode_minus"] = False
+    CHART_TEXT = KOREAN_CHART_TEXT
+else:
+    matplotlib.rcParams["font.family"] = "DejaVu Sans"
+    CHART_TEXT = ENGLISH_CHART_TEXT
+"""
+
 
 def build_notebook(path: Path = Path("notebooks/analysis_report.ipynb")) -> Path:
     cells = [
@@ -83,6 +133,7 @@ import pandas as pd
 import seaborn as sns
 from IPython.display import Markdown, display
 
+""" + CHART_STYLE_SOURCE + """
 ROOT = Path(os.environ["PROJECT_ROOT"]).resolve()
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
@@ -199,45 +250,45 @@ display(Markdown(f"**상관관계 2 — 가격·이미지 평균:** 거래 가�
 
 plt.figure(figsize=(8, 4))
 plt.stairs(eda["histogram_counts"], eda["histogram_edges"])
-plt.title("상대 가격 분포")
-plt.xlabel("상대 데이터셋 가격값")
-plt.ylabel("거래 건수")
+plt.title(CHART_TEXT["price_title"])
+plt.xlabel(CHART_TEXT["price_x"])
+plt.ylabel(CHART_TEXT["count_y"])
 plt.show()
 
 plt.figure(figsize=(8, 4))
 ax = plt.gca()
 ax.bxp([eda["boxplot_before"], eda["boxplot_after"]], showfliers=False)
-plt.title("IQR 필터링 전후 상대 가격")
-plt.xlabel("IQR 처리 상태")
-plt.ylabel("상대 데이터셋 가격값")
+plt.title(CHART_TEXT["iqr_title"])
+plt.xlabel(CHART_TEXT["iqr_x"])
+plt.ylabel(CHART_TEXT["price_x"])
 plt.show()
 
 plt.figure(figsize=(8, 4))
 rfm["segment"].value_counts().sort_index().plot.bar()
-plt.title("RFM 세그먼트별 고객 수")
-plt.xlabel("RFM 세그먼트")
-plt.ylabel("고객 수")
+plt.title(CHART_TEXT["segment_title"])
+plt.xlabel(CHART_TEXT["segment_x"])
+plt.ylabel(CHART_TEXT["customer_y"])
 plt.show()
 
 plt.figure(figsize=(6, 5))
 sns.heatmap(product_features[["image_mean", "image_std", "product_name_length"]].corr(), annot=True, cmap="Blues")
-plt.title("상품 이미지와 텍스트 특징 상관관계")
-plt.xlabel("특징")
-plt.ylabel("특징")
+plt.title(CHART_TEXT["feature_title"])
+plt.xlabel(CHART_TEXT["feature_axis"])
+plt.ylabel(CHART_TEXT["feature_axis"])
 plt.show()
 
 plt.figure(figsize=(8, 4))
 plt.scatter(rfm["frequency"], rfm["monetary"], alpha=0.15, s=3, rasterized=True)
-plt.title("고객 구매 빈도와 Monetary 값")
-plt.xlabel("고유 구매일 수")
-plt.ylabel("합계 상대 데이터셋 값")
+plt.title(CHART_TEXT["frequency_title"])
+plt.xlabel(CHART_TEXT["frequency_x"])
+plt.ylabel(CHART_TEXT["monetary_y"])
 plt.show()
 
 plt.figure(figsize=(9, 4))
 plt.plot(monthly_value["order_month"], monthly_value["monetary"])
-plt.title("월별 합계 상대 데이터셋 값")
-plt.xlabel("주문 월")
-plt.ylabel("합계 상대 데이터셋 값")
+plt.title(CHART_TEXT["monthly_title"])
+plt.xlabel(CHART_TEXT["month_x"])
+plt.ylabel(CHART_TEXT["monetary_y"])
 plt.xticks(rotation=45)
 plt.show()"""),
         new_markdown_cell("""## RFM 세분화

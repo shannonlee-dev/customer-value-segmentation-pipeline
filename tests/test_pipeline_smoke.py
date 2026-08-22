@@ -274,17 +274,17 @@ class PipelineSmokeTest(unittest.TestCase):
             self.assertIn("transaction_feature_correlation", code)
             self.assertIn("매우 약한 선형 관계", code)
 
-    def test_generated_notebook_localizes_human_facing_text_to_korean(self) -> None:
+    def test_generated_notebook_keeps_report_narrative_in_korean(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             notebook = build_notebook(Path(directory) / "analysis_report.ipynb")
             rendered = nbformat.read(notebook, as_version=4)
             content = "\n".join(cell.source for cell in rendered.cells)
+            narrative = "\n".join(cell.source for cell in rendered.cells if cell.cell_type == "markdown")
 
             self.assertIn("# H&M 고객 가치 분석", content)
             self.assertIn("상대 가격 분포", content)
             self.assertIn("RFM 세분화", content)
-            self.assertNotIn("Open this notebook", content)
-            self.assertNotIn("Relative Price Distribution", content)
+            self.assertNotIn("Open this notebook", narrative)
 
     def test_pipeline_generates_all_artifacts_from_a_complete_fixture(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

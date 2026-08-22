@@ -2,11 +2,13 @@
 
 import tempfile
 import unittest
+import warnings
 from pathlib import Path
+from unittest.mock import patch
 
 import nbformat
 
-from scripts.build_notebook import build_notebook
+from scripts.build_notebook import CHART_STYLE_SOURCE, build_notebook
 from scripts.build_precomputed_notebook import build_notebook as build_precomputed_notebook
 
 
@@ -29,6 +31,30 @@ def inspect_source_notebook(path: Path) -> dict[str, int | str]:
 
 
 class NotebookContractTest(unittest.TestCase):
+    def test_chart_style_renders_every_label_without_missing_glyph_warnings(self) -> None:
+        import matplotlib
+
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+
+        namespace = {"matplotlib": matplotlib}
+        with patch.object(matplotlib.font_manager.fontManager, "ttflist", []):
+            exec(CHART_STYLE_SOURCE, namespace)
+        self.assertIs(namespace["CHART_TEXT"], namespace["ENGLISH_CHART_TEXT"])
+
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            figure = plt.figure()
+            for index, label in enumerate(namespace["CHART_TEXT"].values()):
+                figure.text(0, index / 20, label)
+            figure.canvas.draw()
+            plt.close(figure)
+
+        missing_glyph_warnings = [
+            warning for warning in caught if "Glyph" in str(warning.message) and "missing from font" in str(warning.message)
+        ]
+        self.assertEqual(missing_glyph_warnings, [])
+
     def test_readme_links_to_the_pipeline_flow_diagram(self) -> None:
         project = Path(__file__).resolve().parents[1]
         readme = (project / "README.md").read_text(encoding="utf-8")
