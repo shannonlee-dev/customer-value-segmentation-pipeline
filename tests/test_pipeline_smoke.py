@@ -319,7 +319,7 @@ class PipelineSmokeTest(unittest.TestCase):
             self.assertEqual(len(rfm), 3)
             self.assertTrue(Path(eda["monthly_summary_path"]).is_file())
 
-    def test_load_data_rebuilds_caches_that_contain_removed_columns(self) -> None:
+    def test_load_data_reuses_caches_that_contain_formerly_removed_columns(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             raw = root / "raw"
@@ -347,10 +347,14 @@ class PipelineSmokeTest(unittest.TestCase):
             refreshed.load_data()
             image_features = refreshed.engineer_features()
 
-            self.assertNotIn("sales_channel_id", pd.read_csv(refreshed.transactions_path, nrows=1).columns)
-            self.assertNotIn("fashion_news_frequency", refreshed.customers.columns)
-            self.assertNotIn("category", refreshed.articles.columns)
-            self.assertNotIn("image_status", image_features.columns)
+            self.assertEqual(refreshed.artifact_status["transactions"], "REUSED")
+            self.assertEqual(refreshed.artifact_status["customers"], "REUSED")
+            self.assertEqual(refreshed.artifact_status["articles"], "REUSED")
+            self.assertEqual(refreshed.artifact_status["image features"], "REUSED")
+            self.assertIn("sales_channel_id", pd.read_csv(refreshed.transactions_path, nrows=1).columns)
+            self.assertIn("fashion_news_frequency", refreshed.customers.columns)
+            self.assertIn("category", refreshed.articles.columns)
+            self.assertIn("image_status", image_features.columns)
 
 
 if __name__ == "__main__":

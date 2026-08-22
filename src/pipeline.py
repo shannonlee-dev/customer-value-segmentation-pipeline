@@ -180,7 +180,6 @@ class DataAnalyzer:
             self.runtime_images_path,
             IMAGE_FEATURES_CACHE_FILENAME,
             IMAGE_FEATURE_REQUIRED_COLUMNS,
-            forbidden_columns=("image_status",),
         )
         if source is not None:
             self.images_path = source
@@ -444,7 +443,6 @@ class DataAnalyzer:
             self.runtime_customers_path,
             CUSTOMERS_CACHE_FILENAME,
             CUSTOMER_NORMALIZED_REQUIRED_COLUMNS,
-            forbidden_columns=("fashion_news_frequency", "age_was_missing"),
         )
         if source is not None:
             self.customers_path = source
@@ -470,7 +468,6 @@ class DataAnalyzer:
             self.runtime_articles_path,
             ARTICLES_CACHE_FILENAME,
             ARTICLE_NORMALIZED_REQUIRED_COLUMNS,
-            forbidden_columns=("category",),
         )
         if source is not None:
             self.articles_path = source
@@ -498,7 +495,6 @@ class DataAnalyzer:
             self.runtime_transactions_path,
             TRANSACTIONS_CACHE_FILENAME,
             TRANSACTION_NORMALIZED_REQUIRED_COLUMNS,
-            forbidden_columns=("sales_channel_id",),
         )
         if source is not None:
             self.transactions_path = source
@@ -612,12 +608,11 @@ class DataAnalyzer:
         runtime_path: Path,
         filename: str,
         required_columns: tuple[str, ...],
-        forbidden_columns: tuple[str, ...] = (),
     ) -> Path | None:
         for source_name, root in self._reuse_sources():
             candidates = [runtime_path] if source_name == "runtime cache" else sorted(root.rglob(filename))
             for candidate in candidates:
-                valid, reason = self._valid_csv(candidate, required_columns, forbidden_columns)
+                valid, reason = self._valid_csv(candidate, required_columns)
                 if valid:
                     self._record_status(artifact, "REUSED", candidate)
                     return candidate
@@ -643,7 +638,6 @@ class DataAnalyzer:
     def _valid_csv(
         path: Path,
         required_columns: tuple[str, ...],
-        forbidden_columns: tuple[str, ...] = (),
     ) -> tuple[bool, str]:
         if not path.is_file():
             return False, "file does not exist"
@@ -654,9 +648,6 @@ class DataAnalyzer:
         missing = set(required_columns).difference(sample.columns)
         if missing:
             return False, f"missing required columns: {sorted(missing)}"
-        forbidden = set(forbidden_columns).intersection(sample.columns)
-        if forbidden:
-            return False, f"contains removed columns: {sorted(forbidden)}"
         if sample.empty:
             return False, "CSV has no data rows"
         return True, ""
