@@ -14,11 +14,32 @@
 
 `src/pipeline.py`의 `DataAnalyzer`가 public facade다. 전체 통합 거래 DataFrame은 만들지 않고 `transactions`, `customers`, `articles`, `product_features`를 각각의 grain으로 유지한다. 필요한 분석에서만 join하며, 노트북의 Dataset Inventory가 실행 시점의 shape와 schema를 보여준다.
 
-- `load_data()` — 전체 거래 chunk 처리와 스키마 검증
-- `handle_missing_values()` — 고객 단위 회원상태 그룹 중앙값 대치
+- `load_data()` — 전체 원본을 로드·정규화·검증하며 고객 `age` 결측은 그대로 둘 수 있음
+- `handle_missing_values()` — `load_data()` 이후 고객 단위 그룹 통계로 같은 `age` 컬럼의 결측을 대치하고 최종 `customers.csv` 저장
 - `engineer_features()` — 전체 이용 가능 이미지 Mean/Std와 상품명 길이
 - `detect_outliers()` — 전체 가격 IQR
 - `calculate_rfm()` — 고객 hash partition 기반 전체 RFM
+
+
+### 메모리 효율화 전략
+
+- **CSV chunking:** 수천만 건의 거래 CSV를 한 번에 메모리에 올리지 않고 50만 행 단위로 읽어 변환·검증한 뒤 결과를 순차 저장한다.
+- **NumPy `memmap`:** IQR 계산에 필요한 `unit_price`만 binary 파일로 추출하고 disk-backed array로 읽어, 전체 가격 데이터 기준의 정확한 분위수를 제한된 메모리에서 계산한다.
+- **고객 hash partitioning:** `customer_id`를 64개 partition으로 분배해 동일 고객의 거래를 한곳에 모은 뒤 partition별로 RFM을 집계한다.
+- **이미지 scalar 특징:** 이미지를 한 장씩 디코딩해 전체 픽셀의 `image_mean`과 `image_std`만 저장함으로써 원본 이미지 배열 대신 작은 상품 특징 테이블을 사용한다.
+
+#### 피어슨 상관계수 계산
+
+대규모 거래 데이터를 사용하는 가격–연령과 가격–이미지 평균의 피어슨 상관계수는 전체 결합 데이터를 메모리에 만들지 않도록 다음과 같이 대수적으로 변형해 계산한다.
+
+$$
+r = \frac{n\sum xy - (\sum x)(\sum y)}
+{\sqrt{\left(n\sum x^2-(\sum x)^2\right)\left(n\sum y^2-(\sum y)^2\right)}}
+$$
+
+각 chunk에서 `n`, $\sum x$, $\sum y$, $\sum xy$, $\sum x^2$, $\sum y^2$만 누적하므로 원래 피어슨 상관계수와 같은 값을 제한된 메모리로 계산할 수 있다.
+
+반면 특징 히트맵은 상대적으로 작은 `product_features` 테이블의 `image_mean`, `image_std`, `product_name_length`에 Pandas `DataFrame.corr()`를 직접 적용한다. 히트맵의 각 숫자 역시 피어슨 상관계수지만, 위의 chunk 누적 대수식을 사용하는 것은 아니다.
 
 나이 중앙값 대치는 고객 속성을 중복 거래마다 처리하지 않는 장점이 있지만 분산을 줄일 수 있다. IQR은 극단값에 강하지만 오른쪽으로 긴 정상 고가 상품을 이상치로 표시할 수 있다. RFM Frequency는 거래 행 수가 아니라 고유 구매일 수다.
 

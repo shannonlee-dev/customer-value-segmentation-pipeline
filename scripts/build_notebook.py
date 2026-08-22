@@ -160,12 +160,17 @@ print("분석 범위: 전체 데이터셋")"""),
 
 각 이미지 파일은 `matplotlib.image.imread`로 읽습니다. 파일 loop는 I/O만 수행하고, 이미지 내부 계산은 decode된 전체 배열에 `np.mean`, `np.std`를 적용하는 NumPy vectorized 연산입니다. 이미지를 하나의 전역 tensor로 쌓지 않습니다."""),
         new_code_cell("""summary = analyzer.load_data()
+missing = analyzer.handle_missing_values("age", "club_member_status")
 product_features = analyzer.engineer_features()
 iqr = analyzer.detect_outliers()
 recompute_artifacts = context.raw_data_root is not None
 rfm = analyzer.calculate_rfm(force=recompute_artifacts)
 eda = analyzer.prepare_eda_artifacts(force=recompute_artifacts)
 print(analyzer.format_cache_report())
+print(
+    "연령 결측 대치:",
+    f"{missing['missing_before']:,} → {missing['missing_after']:,}",
+)
 
 transaction_schema = pd.read_csv(analyzer.transactions_path, nrows=0)
 customers = pd.read_csv(analyzer.customers_path, dtype={"customer_id": "string"})

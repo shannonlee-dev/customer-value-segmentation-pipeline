@@ -74,6 +74,21 @@ class NotebookContractTest(unittest.TestCase):
 
         self.assertEqual(summary["status"], "PASS")
 
+    def test_analysis_notebook_handles_missing_values_before_engineering_product_features(self) -> None:
+        """Catch a notebook workflow that skips the explicit cleaning stage."""
+        with tempfile.TemporaryDirectory() as directory:
+            notebook = nbformat.read(build_notebook(Path(directory) / "analysis_report.ipynb"), as_version=4)
+        code = "\n".join(cell.source for cell in notebook.cells if cell.cell_type == "code")
+
+        load_index = code.index("summary = analyzer.load_data()")
+        missing_index = code.index(
+            'missing = analyzer.handle_missing_values("age", "club_member_status")'
+        )
+        feature_index = code.index("product_features = analyzer.engineer_features()")
+
+        self.assertLess(load_index, missing_index)
+        self.assertLess(missing_index, feature_index)
+
     def test_analysis_notebook_has_a_dedicated_enriched_images_export_cell(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             notebook = nbformat.read(build_notebook(Path(directory) / "analysis_report.ipynb"), as_version=4)
