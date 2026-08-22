@@ -41,6 +41,116 @@ def write_fixture(raw: Path) -> None:
 
 
 class PipelineSmokeTest(unittest.TestCase):
+    def test_data_analyzer_keeps_primary_public_facade_contract(self) -> None:
+        self.assertEqual(DataAnalyzer.__module__, "src.pipeline")
+        for method_name in (
+            "load_data",
+            "handle_missing_values",
+            "engineer_features",
+            "detect_outliers",
+            "calculate_rfm",
+        ):
+            self.assertTrue(callable(getattr(DataAnalyzer, method_name)))
+
+    def test_load_data_preserves_missing_age_until_explicit_imputation(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            raw = root / "raw"
+            raw.mkdir()
+            write_fixture(raw)
+            context = discover_runtime(
+                Path.cwd(),
+                {"HM_RAW_DATA_DIR": str(raw), "HM_RUNTIME_DIR": str(root / "runtime")},
+            )
+            analyzer = DataAnalyzer(context, chunksize=2)
+
+            analyzer.load_data(force=True)
+
+            self.assertListEqual(
+                analyzer.customers.columns.tolist(),
+                ["customer_id", "age", "club_member_status"],
+            )
+            self.assertTrue(
+                analyzer.customers.loc[
+                    analyzer.customers["customer_id"] == "customer-b", "age"
+                ].isna().all()
+            )
+            self.assertNotIn("age_raw", analyzer.customers.columns)
+
+    def test_handle_missing_values_fills_same_column_and_persists_customers(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            raw = root / "raw"
+            raw.mkdir()
+            write_fixture(raw)
+            context = discover_runtime(
+                Path.cwd(),
+                {"HM_RAW_DATA_DIR": str(raw), "HM_RUNTIME_DIR": str(root / "runtime")},
+            )
+            analyzer = DataAnalyzer(context, chunksize=2)
+            analyzer.load_data(force=True)
+
+            result = analyzer.handle_missing_values("age", "club_member_status")
+
+            self.assertEqual(result, {"missing_before": 1, "missing_after": 0})
+            self.assertEqual(
+                analyzer.customers.loc[
+                    analyzer.customers["customer_id"] == "customer-a", "age"
+                ].iloc[0],
+                25,
+            )
+            self.assertEqual(
+                analyzer.customers.loc[
+                    analyzer.customers["customer_id"] == "customer-b", "age"
+                ].iloc[0],
+                25,
+            )
+            self.assertFalse(analyzer.customers["age"].isna().any())
+            self.assertEqual(analyzer.customers_path, analyzer.runtime_customers_path)
+
+            persisted = pd.read_csv(analyzer.customers_path)
+            self.assertFalse(persisted["age"].isna().any())
+            self.assertNotIn("age_raw", persisted.columns)
+
+    def test_handle_missing_values_is_idempotent_after_age_is_clean(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            raw = root / "raw"
+            raw.mkdir()
+            write_fixture(raw)
+            context = discover_runtime(
+                Path.cwd(),
+                {"HM_RAW_DATA_DIR": str(raw), "HM_RUNTIME_DIR": str(root / "runtime")},
+            )
+            analyzer = DataAnalyzer(context, chunksize=2)
+            analyzer.load_data(force=True)
+            analyzer.handle_missing_values("age", "club_member_status")
+
+            result = analyzer.handle_missing_values("age", "club_member_status")
+
+            self.assertEqual(result, {"missing_before": 0, "missing_after": 0})
+
+    def test_handle_missing_values_raises_when_no_statistic_can_fill_column(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            raw = root / "raw"
+            raw.mkdir()
+            write_fixture(raw)
+            customers = pd.read_csv(raw / "customers.csv")
+            customers["age"] = np.nan
+            customers.to_csv(raw / "customers.csv", index=False)
+            context = discover_runtime(
+                Path.cwd(),
+                {"HM_RAW_DATA_DIR": str(raw), "HM_RUNTIME_DIR": str(root / "runtime")},
+            )
+            analyzer = DataAnalyzer(context, chunksize=2)
+            analyzer.load_data(force=True)
+
+            with self.assertRaisesRegex(ValueError, "could not impute all missing values"):
+                analyzer.handle_missing_values("age", "club_member_status")
+
+            self.assertTrue(analyzer.customers["age"].isna().all())
+
     def test_runtime_dataset_root_uses_required_dataset_files_name(self) -> None:
         self.assertEqual(runtime.REQUIRED_DATASET_FILES, ("transactions_train.csv", "customers.csv", "articles.csv", "images"))
 
