@@ -222,26 +222,32 @@ if monthly_summary_path is None:
         raise RuntimeError(f"monthly_summary.csv를 하나만 찾아야 합니다. 발견 수: {len(matches)}")
     monthly_summary_path = matches[0]
 monthly_value = pd.read_csv(monthly_summary_path)
-def transaction_feature_correlation(transaction_path, features, feature_column):
+def transaction_feature_correlation(transaction_path, features, feature_column, lower_fence, upper_fence):
     lookup = features[["product_id", feature_column]].dropna().drop_duplicates("product_id")
     count = sum_x = sum_y = sum_xy = sum_x2 = sum_y2 = 0.0
+    outlier_values = set()
     for chunk in pd.read_csv(
         transaction_path,
         usecols=["product_id", "unit_price"],
         dtype={"product_id": "string"},
         chunksize=500_000,
     ):
+        prices = chunk["unit_price"]
+        outlier_values.update(prices[(prices < lower_fence) | (prices > upper_fence)].unique())
         paired = chunk.merge(lookup, on="product_id", how="inner")
         x = paired["unit_price"].to_numpy(dtype=float)
         y = paired[feature_column].to_numpy(dtype=float)
         count += len(x); sum_x += x.sum(); sum_y += y.sum(); sum_xy += (x * y).sum(); sum_x2 += (x * x).sum(); sum_y2 += (y * y).sum()
     denominator = ((count * sum_x2 - sum_x ** 2) * (count * sum_y2 - sum_y ** 2)) ** 0.5
-    return 0.0 if denominator == 0 else float((count * sum_xy - sum_x * sum_y) / denominator)
+    correlation = 0.0 if denominator == 0 else float((count * sum_xy - sum_x * sum_y) / denominator)
+    return correlation, sorted(outlier_values)
 
-price_image_mean_corr = transaction_feature_correlation(
+price_image_mean_corr, unique_price_outliers = transaction_feature_correlation(
     analyzer.transactions_path,
     product_features,
     "image_mean",
+    iqr["lower_fence"],
+    iqr["upper_fence"],
 )
 price_age_note = "매우 약한 선형 관계" if abs(price_age_corr) < 0.1 else "약한 선형 관계"
 price_image_note = "매우 약한 선형 관계" if abs(price_image_mean_corr) < 0.1 else "약한 선형 관계"
@@ -254,28 +260,49 @@ plt.title(CHART_TEXT["price_title"])
 plt.xlabel(CHART_TEXT["price_x"])
 plt.ylabel(CHART_TEXT["count_y"])
 plt.show()
+display(Markdown(f"**차트 인사이트:** 평균 `{price_statistics['mean']:.6f}`이 중앙값 `{price_statistics['median']:.6f}`보다 {'높아' if price_statistics['mean'] > price_statistics['median'] else '낮아'} 분포의 비대칭성을 확인할 수 있습니다."))
 
 plt.figure(figsize=(8, 4))
 ax = plt.gca()
-ax.bxp([eda["boxplot_before"], eda["boxplot_after"]], showfliers=False)
+boxplots = [
+    {**eda["boxplot_before"], "fliers": unique_price_outliers},
+    {**eda["boxplot_after"], "fliers": []},
+]
+ax.bxp(
+    boxplots,
+    showfliers=True,
+    flierprops={"marker": "o", "markersize": 2, "markerfacecolor": "#d62728", "markeredgecolor": "none", "alpha": 0.35},
+)
 plt.title(CHART_TEXT["iqr_title"])
 plt.xlabel(CHART_TEXT["iqr_x"])
 plt.ylabel(CHART_TEXT["price_x"])
 plt.show()
+display(Markdown(f"**차트 인사이트:** IQR 기준 이상치 `{iqr['outlier_count']:,}`건을 빨간 점으로 표시했으며, 필터링 후 분포는 해당 기준 안의 거래만 포함합니다."))
 
 plt.figure(figsize=(8, 4))
-rfm["segment"].value_counts().sort_index().plot.bar()
+segment_counts = rfm["segment"].value_counts().sort_index()
+segment_counts.plot.bar()
 plt.title(CHART_TEXT["segment_title"])
 plt.xlabel(CHART_TEXT["segment_x"])
 plt.ylabel(CHART_TEXT["customer_y"])
 plt.show()
+largest_segment = segment_counts.idxmax()
+display(Markdown(f"**차트 인사이트:** `{largest_segment}` 세그먼트가 `{segment_counts[largest_segment]:,}`명으로 가장 커 고객 구성의 중심을 이룹니다."))
 
 plt.figure(figsize=(6, 5))
-sns.heatmap(product_features[["image_mean", "image_std", "product_name_length"]].corr(), annot=True, cmap="Blues")
+feature_correlation = product_features[["image_mean", "image_std", "product_name_length"]].corr()
+sns.heatmap(feature_correlation, annot=True, cmap="Blues")
 plt.title(CHART_TEXT["feature_title"])
 plt.xlabel(CHART_TEXT["feature_axis"])
 plt.ylabel(CHART_TEXT["feature_axis"])
 plt.show()
+feature_pairs = {
+    "이미지 평균·이미지 표준편차": feature_correlation.loc["image_mean", "image_std"],
+    "이미지 평균·상품명 길이": feature_correlation.loc["image_mean", "product_name_length"],
+    "이미지 표준편차·상품명 길이": feature_correlation.loc["image_std", "product_name_length"],
+}
+strongest_pair, strongest_value = max(feature_pairs.items(), key=lambda item: abs(item[1]))
+display(Markdown(f"**차트 인사이트:** 비교한 특징 중 `{strongest_pair}`의 상관계수 절댓값이 `{abs(strongest_value):.3f}`로 가장 큽니다."))
 
 plt.figure(figsize=(8, 4))
 plt.scatter(rfm["frequency"], rfm["monetary"], alpha=0.15, s=3, rasterized=True)
@@ -283,6 +310,8 @@ plt.title(CHART_TEXT["frequency_title"])
 plt.xlabel(CHART_TEXT["frequency_x"])
 plt.ylabel(CHART_TEXT["monetary_y"])
 plt.show()
+frequency_monetary_corr = rfm[["frequency", "monetary"]].corr().iloc[0, 1]
+display(Markdown(f"**차트 인사이트:** 구매 빈도와 Monetary의 상관계수는 `r = {frequency_monetary_corr:+.3f}`로, 빈도만으로 고객 가치를 완전히 설명할 수는 없습니다."))
 
 plt.figure(figsize=(9, 4))
 plt.plot(monthly_value["order_month"], monthly_value["monetary"])
@@ -290,7 +319,9 @@ plt.title(CHART_TEXT["monthly_title"])
 plt.xlabel(CHART_TEXT["month_x"])
 plt.ylabel(CHART_TEXT["monetary_y"])
 plt.xticks(rotation=45)
-plt.show()"""),
+plt.show()
+peak_month = monthly_value.loc[monthly_value["monetary"].idxmax()]
+display(Markdown(f"**차트 인사이트:** `{peak_month['order_month']}`의 월별 Monetary가 `{peak_month['monetary']:.2f}`로 가장 높아, 해당 시점의 거래 집중도를 보여줍니다."))"""),
         new_markdown_cell("""## RFM 세분화
 
 분석 기준일은 parameter입니다. 기본값은 마지막 거래일 다음 날이므로 가장 최근 구매자의 Recency는 양수 1일입니다. Frequency는 고유 구매일 수여서 같은 날 여러 상품을 구매한 행이 구매 빈도를 부풀리지 않습니다. Monetary는 상대 거래값의 합계입니다.

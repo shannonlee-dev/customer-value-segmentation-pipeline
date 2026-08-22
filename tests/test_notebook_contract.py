@@ -87,6 +87,22 @@ class NotebookContractTest(unittest.TestCase):
         self.assertIn("image_path = analyzer.images_path", export_cells[0])
         self.assertIn('output_path = Path("/kaggle/working/product_images_enriched.csv")', export_cells[0])
 
+    def test_analysis_notebook_marks_iqr_outliers_and_explains_each_chart(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            notebook = nbformat.read(build_notebook(Path(directory) / "analysis_report.ipynb"), as_version=4)
+
+        chart_cells = [
+            cell.source
+            for cell in notebook.cells
+            if cell.cell_type == "code" and 'plt.stairs(eda["histogram_counts"]' in cell.source
+        ]
+        self.assertEqual(len(chart_cells), 1)
+        chart_code = chart_cells[0]
+        self.assertIn("unique_price_outliers", chart_code)
+        self.assertIn("showfliers=True", chart_code)
+        self.assertIn('flierprops={"marker": "o"', chart_code)
+        self.assertEqual(chart_code.count('display(Markdown(f"**차트 인사이트:**'), 6)
+
     def test_every_notebook_bootstraps_the_project_only_on_kaggle(self) -> None:
         """Catch a missing Kaggle clone fallback or accidental local auto-clone."""
         with tempfile.TemporaryDirectory() as directory:
@@ -128,7 +144,7 @@ class NotebookContractTest(unittest.TestCase):
         self.assertIn("available_fonts", code)
         self.assertIn('plt.title(CHART_TEXT["price_title"])', code)
         self.assertIn("price_image_mean_corr", code)
-        self.assertIn("price_image_mean_corr = transaction_feature_correlation", code)
+        self.assertIn("price_image_mean_corr, unique_price_outliers = transaction_feature_correlation", code)
         self.assertIn("transaction_path", code)
 
     def test_precomputed_notebook_has_a_dedicated_enriched_images_export_cell(self) -> None:
