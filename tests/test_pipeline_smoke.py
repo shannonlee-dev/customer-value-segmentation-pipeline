@@ -12,7 +12,7 @@ import nbformat
 
 from scripts.build_notebook import build_notebook
 from src._pipeline.artifacts import ArtifactStore
-from src import runtime
+from src import pipeline, runtime
 from src.pipeline import DataAnalyzer, _calculate_iqr_statistics
 from src.runtime import discover_runtime
 
@@ -78,6 +78,8 @@ class PipelineSmokeTest(unittest.TestCase):
 
     def test_data_analyzer_keeps_primary_public_facade_contract(self) -> None:
         self.assertEqual(DataAnalyzer.__module__, "src.pipeline")
+        self.assertEqual(pipeline.RAW_PRODUCT_NAME_COLUMN, "prod_name")
+        self.assertEqual(pipeline.RFM_SCORE_QUANTILE_COUNT, 4)
         for method_name in (
             "load_data",
             "handle_missing_values",
