@@ -12,6 +12,7 @@ import nbformat
 
 from scripts.build_notebook import build_notebook
 from src._pipeline.artifacts import ArtifactStore
+from src._pipeline.features import ProductFeatureEngineer
 from src._pipeline.loading import DataLoader
 from src import pipeline, runtime
 from src.pipeline import DataAnalyzer, _calculate_iqr_statistics
@@ -345,7 +346,7 @@ class PipelineSmokeTest(unittest.TestCase):
         self.assertEqual(DataAnalyzer.classify_segment(1, 4, 4), "Churned")
         self.assertEqual(DataAnalyzer.classify_segment(2, 2, 2), "Potential")
 
-    def test_extract_product_features_calculates_text_and_pixel_features(self) -> None:
+    def test_extract_image_features_calculates_text_and_pixel_features(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             raw = root / "raw"
@@ -355,9 +356,14 @@ class PipelineSmokeTest(unittest.TestCase):
                 Path.cwd(),
                 {"HM_RAW_DATA_DIR": str(raw), "HM_RUNTIME_DIR": str(root / "runtime")},
             )
-            analyzer = DataAnalyzer(context)
+            engineer = ProductFeatureEngineer(context, ArtifactStore(context, {}, []))
 
-            record = analyzer._extract_product_features(raw, "0010000001", "Item one", "images/001/0010000001.jpg")
+            record = engineer._extract_image_features(
+                raw,
+                "0010000001",
+                "Item one",
+                "images/001/0010000001.jpg",
+            )
 
             self.assertEqual(record["product_name_length"], 8)
             self.assertTrue(np.isfinite(record["image_mean"]))

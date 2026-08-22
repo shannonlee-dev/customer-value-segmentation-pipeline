@@ -5,9 +5,9 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-from matplotlib import image as mpimg
 
 from ._pipeline.artifacts import ArtifactStore
+from ._pipeline.features import ProductFeatureEngineer
 from ._pipeline.loading import DataLoader
 from ._pipeline.contracts import (
     ARTICLE_NORMALIZED_REQUIRED_COLUMNS,
@@ -25,14 +25,10 @@ from ._pipeline.contracts import (
     DEFAULT_RFM_CUSTOMER_COLUMN,
     DEFAULT_RFM_DATE_COLUMN,
     DEFAULT_RFM_PARTITION_COUNT,
-    IMAGE_FEATURE_REQUIRED_COLUMNS,
     IMAGE_MEAN_COLUMN,
-    IMAGE_PATH_COLUMN,
-    IMAGE_STD_COLUMN,
     ORDER_DATE_COLUMN,
     PRODUCT_FEATURES_CACHE_FILENAME,
     PRODUCT_ID_COLUMN,
-    PRODUCT_NAME_COLUMN,
     PRODUCT_NAME_LENGTH_COLUMN,
     RAW_ARTICLE_ID_COLUMN,
     RAW_ARTICLE_REQUIRED_COLUMNS,
@@ -88,8 +84,6 @@ RFM_PARTITION_FILENAME_TEMPLATE = "part_{index:02d}.csv"
 DEFAULT_MISSING_VALUE_STRATEGY = "median"
 SUPPORTED_MISSING_VALUE_STRATEGIES = ("median", "mean")
 IMAGE_DIRECTORY = "images"
-IMAGE_RGB_CHANNEL_COUNT = 3
-
 # IQR policies
 DEFAULT_OUTLIER_COLUMN = UNIT_PRICE_COLUMN
 DEFAULT_IQR_THRESHOLD = 1.5
@@ -137,6 +131,7 @@ class DataAnalyzer:
             self.cache_messages,
         )
         self._loader = DataLoader(context, self._artifacts, chunksize)
+        self._feature_engineer = ProductFeatureEngineer(context, self._artifacts)
 
     def load_data(self, *, force: bool = False) -> dict[str, int]:
         """Load and normalize full source data without performing imputation."""
@@ -192,58 +187,16 @@ class DataAnalyzer:
 
     def engineer_features(self, *, force: bool = False) -> pd.DataFrame:
         """Reuse cached product features or calculate them once."""
-        source = None if force else self._artifacts.find_reusable_csv(
-            "product features",
-            self.runtime_product_features_path,
-            PRODUCT_FEATURES_CACHE_FILENAME,
-            IMAGE_FEATURE_REQUIRED_COLUMNS,
-        )
-        if source is not None:
-            self.product_features_path = source
-            return pd.read_csv(source, dtype={PRODUCT_ID_COLUMN: STRING_DTYPE})
         if self.articles is None:
-            self.articles = pd.read_csv(self.articles_path, dtype={PRODUCT_ID_COLUMN: STRING_DTYPE})
-        raw = self._require_raw_data_root()
-        records = [
-            self._extract_product_features(raw, product_id, product_name, image_path)
-            for product_id, product_name, image_path in self.articles[
-                [PRODUCT_ID_COLUMN, PRODUCT_NAME_COLUMN, IMAGE_PATH_COLUMN]
-            ].itertuples(index=False)
-        ]
-        features = pd.DataFrame.from_records(records)
-        self.product_features_path = self.runtime_product_features_path
-        features.to_csv(self.product_features_path, index=False)
-        self._artifacts.record_status("product features", "COMPUTED", self.product_features_path)
+            self.articles = pd.read_csv(
+                self.articles_path,
+                dtype={PRODUCT_ID_COLUMN: STRING_DTYPE},
+            )
+        features, self.product_features_path = self._feature_engineer.build(
+            self.articles,
+            force=force,
+        )
         return features
-
-    @staticmethod
-    def _extract_product_features(
-        raw_data_root: Path,
-        product_id: object,
-        product_name: object,
-        image_path: str,
-    ) -> dict[str, object]:
-        """Calculate the text and pixel features for one product."""
-        record: dict[str, object] = {
-            PRODUCT_ID_COLUMN: product_id,
-            IMAGE_PATH_COLUMN: image_path,
-            PRODUCT_NAME_LENGTH_COLUMN: len(str(product_name)) if pd.notna(product_name) else np.nan,
-            IMAGE_MEAN_COLUMN: np.nan,
-            IMAGE_STD_COLUMN: np.nan,
-        }
-        path = raw_data_root / image_path
-        if not path.is_file():
-            return record
-        try:
-            pixels = np.asarray(mpimg.imread(path))
-            if pixels.ndim == 2:
-                pixels = pixels[..., np.newaxis]
-            pixels = pixels[..., :IMAGE_RGB_CHANNEL_COUNT]
-            record[IMAGE_MEAN_COLUMN] = float(np.mean(pixels))
-            record[IMAGE_STD_COLUMN] = float(np.std(pixels))
-        except (OSError, ValueError, SyntaxError):
-            pass
-        return record
 
     def detect_outliers(
         self,
