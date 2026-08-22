@@ -14,6 +14,7 @@ from scripts.build_notebook import build_notebook
 from src._pipeline.artifacts import ArtifactStore
 from src._pipeline.features import ProductFeatureEngineer
 from src._pipeline.loading import DataLoader
+from src._pipeline.rfm import RFMEngine
 from src import pipeline, runtime
 from src.pipeline import DataAnalyzer, _calculate_iqr_statistics
 from src.runtime import discover_runtime
@@ -294,6 +295,10 @@ class PipelineSmokeTest(unittest.TestCase):
                 {"HM_RAW_DATA_DIR": str(raw), "HM_RUNTIME_DIR": str(root / "runtime")},
             )
             analyzer = DataAnalyzer(context, chunksize=2)
+            status: dict[str, str] = {}
+            messages: list[str] = []
+            store = ArtifactStore(context, status, messages)
+            engine = RFMEngine(context, store, chunksize=2)
             pd.DataFrame(
                 {
                     "customer_id": ["customer-a", "customer-b", "customer-a", "customer-c"],
@@ -302,7 +307,13 @@ class PipelineSmokeTest(unittest.TestCase):
                 }
             ).to_csv(analyzer.transactions_path, index=False)
 
-            paths, _ = analyzer._partition_transactions("customer_id", "order_date", "unit_price", 3)
+            paths, _ = engine._partition_transactions(
+                analyzer.transactions_path,
+                "customer_id",
+                "order_date",
+                "unit_price",
+                3,
+            )
 
             partitions_with_customer = [
                 path
@@ -320,7 +331,7 @@ class PipelineSmokeTest(unittest.TestCase):
             }
         )
 
-        result = DataAnalyzer._aggregate_rfm_partition(
+        result = RFMEngine._aggregate_rfm_partition(
             frame,
             "customer_id",
             "order_date",
@@ -333,18 +344,18 @@ class PipelineSmokeTest(unittest.TestCase):
         self.assertEqual(result.loc[0, "monetary"], 60)
 
     def test_score_rfm_metric_keeps_tied_values_in_the_same_score_bucket(self) -> None:
-        single_score = DataAnalyzer._score_rfm_metric(pd.Series([10]), ascending=True)
-        tied_scores = DataAnalyzer._score_rfm_metric(pd.Series([10, 10, 20, 30]), ascending=True)
+        single_score = RFMEngine._score_rfm_metric(pd.Series([10]), ascending=True)
+        tied_scores = RFMEngine._score_rfm_metric(pd.Series([10, 10, 20, 30]), ascending=True)
 
         self.assertEqual(single_score.iloc[0], 4)
         self.assertListEqual(tied_scores.tolist(), [2, 2, 3, 4])
 
     def test_classify_segment_applies_ordered_business_rules(self) -> None:
-        self.assertEqual(DataAnalyzer.classify_segment(4, 4, 4), "VIP")
-        self.assertEqual(DataAnalyzer.classify_segment(4, 3, 1), "Loyal")
-        self.assertEqual(DataAnalyzer.classify_segment(4, 1, 2), "New")
-        self.assertEqual(DataAnalyzer.classify_segment(1, 4, 4), "Churned")
-        self.assertEqual(DataAnalyzer.classify_segment(2, 2, 2), "Potential")
+        self.assertEqual(RFMEngine.classify_segment(4, 4, 4), "VIP")
+        self.assertEqual(RFMEngine.classify_segment(4, 3, 1), "Loyal")
+        self.assertEqual(RFMEngine.classify_segment(4, 1, 2), "New")
+        self.assertEqual(RFMEngine.classify_segment(1, 4, 4), "Churned")
+        self.assertEqual(RFMEngine.classify_segment(2, 2, 2), "Potential")
 
     def test_extract_image_features_calculates_text_and_pixel_features(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
