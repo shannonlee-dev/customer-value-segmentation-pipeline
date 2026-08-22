@@ -44,7 +44,6 @@ RAW_PRICE_COLUMN = "price"
 RAW_TRANSACTION_REQUIRED_COLUMNS = (RAW_DATE_COLUMN, CUSTOMER_ID_COLUMN, RAW_ARTICLE_ID_COLUMN, RAW_PRICE_COLUMN)
 RAW_TRANSACTION_DTYPES = {CUSTOMER_ID_COLUMN: STRING_DTYPE, RAW_ARTICLE_ID_COLUMN: STRING_DTYPE}
 CUSTOMER_AGE_COLUMN = "age"
-ORIGINAL_AGE_COLUMN = "age_raw"
 CUSTOMER_MEMBERSHIP_COLUMN = "club_member_status"
 PRODUCT_NAME_COLUMN = "product_name"
 PRODUCT_NAME_LENGTH_COLUMN = "product_name_length"
@@ -167,10 +166,23 @@ class DataAnalyzer:
         missing_before = int(self.customers[column].isna().sum())
         grouped = self.customers.groupby(group_column, dropna=False)[column].transform(strategy)
         fallback = getattr(self.customers[column], strategy)()
-        self.customers[CUSTOMER_AGE_COLUMN] = self.customers[column].fillna(grouped).fillna(fallback)
+        filled = self.customers[column].fillna(grouped).fillna(fallback)
+        missing_after = int(filled.isna().sum())
+        if missing_after:
+            raise ValueError(
+                f"could not impute all missing values in {column}: {missing_after} remain"
+            )
+
+        self.customers[column] = filled
+        self.customers_path = self.runtime_customers_path
+        self.customers.loc[:, list(CUSTOMER_NORMALIZED_REQUIRED_COLUMNS)].to_csv(
+            self.customers_path,
+            index=False,
+        )
+        self._record_status("customers", "COMPUTED", self.customers_path)
         return {
             "missing_before": missing_before,
-            "missing_after": int(self.customers[CUSTOMER_AGE_COLUMN].isna().sum()),
+            "missing_after": missing_after,
         }
 
     def engineer_features(self, *, force: bool = False) -> pd.DataFrame:
@@ -378,6 +390,13 @@ class DataAnalyzer:
                     return summary
                 self._record_rejection("EDA", summary_path, "missing required summary fields")
 
+        if self.customers is None:
+            raise ValueError("Call load_data before prepare_eda_artifacts")
+        if self.customers[CUSTOMER_AGE_COLUMN].isna().any():
+            raise ValueError(
+                "Call handle_missing_values before prepare_eda_artifacts; customer age still contains missing values"
+            )
+
         values_path, row_count = self._materialize_numeric_column(DEFAULT_OUTLIER_COLUMN)
         values = np.memmap(values_path, dtype="float64", mode="r", shape=(row_count,))
         price_statistics = summarize_numeric(values)
@@ -446,7 +465,10 @@ class DataAnalyzer:
         )
         if source is not None:
             self.customers_path = source
-            self.customers = pd.read_csv(source, dtype={CUSTOMER_ID_COLUMN: STRING_DTYPE})
+            self.customers = pd.read_csv(
+                source,
+                dtype={CUSTOMER_ID_COLUMN: STRING_DTYPE},
+            ).loc[:, list(CUSTOMER_NORMALIZED_REQUIRED_COLUMNS)].copy()
             return
         raw = self._require_raw_data_root()
         customers = pd.read_csv(
@@ -456,8 +478,7 @@ class DataAnalyzer:
         )
         self._require(customers, RAW_CUSTOMER_REQUIRED_COLUMNS)
         self._validate_dimension_keys(customers, CUSTOMER_ID_COLUMN, RAW_CUSTOMERS_FILENAME)
-        self.customers = customers.rename(columns={CUSTOMER_AGE_COLUMN: ORIGINAL_AGE_COLUMN})
-        self.handle_missing_values(ORIGINAL_AGE_COLUMN, CUSTOMER_MEMBERSHIP_COLUMN)
+        self.customers = customers.loc[:, list(CUSTOMER_NORMALIZED_REQUIRED_COLUMNS)].copy()
         self.customers_path = self.runtime_customers_path
         self.customers.to_csv(self.customers_path, index=False)
         self._record_status("customers", "COMPUTED", self.customers_path)

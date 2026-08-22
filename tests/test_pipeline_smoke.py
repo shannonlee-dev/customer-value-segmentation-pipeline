@@ -196,6 +196,7 @@ class PipelineSmokeTest(unittest.TestCase):
             )
             analyzer = DataAnalyzer(context, chunksize=2)
             analyzer.load_data()
+            analyzer.handle_missing_values("age", "club_member_status")
             analyzer.engineer_features()
             shared_summary = {
                 "count": 4,
@@ -408,6 +409,7 @@ class PipelineSmokeTest(unittest.TestCase):
             analyzer = DataAnalyzer(context, chunksize=2)
 
             summary = analyzer.load_data()
+            analyzer.handle_missing_values("age", "club_member_status")
             product_features = analyzer.engineer_features()
             iqr = analyzer.detect_outliers()
             rfm = analyzer.calculate_rfm()
@@ -463,7 +465,7 @@ class PipelineSmokeTest(unittest.TestCase):
             self.assertEqual(refreshed.artifact_status["articles"], "REUSED")
             self.assertEqual(refreshed.artifact_status["product features"], "REUSED")
             self.assertIn("sales_channel_id", pd.read_csv(refreshed.transactions_path, nrows=1).columns)
-            self.assertIn("fashion_news_frequency", refreshed.customers.columns)
+            self.assertNotIn("fashion_news_frequency", refreshed.customers.columns)
             self.assertIn("category", refreshed.articles.columns)
             self.assertIn("image_status", product_features.columns)
 
