@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from src.runtime import RuntimeContext
+from customer_value_segmentation.runtime import RuntimeContext
 
 
 class ArtifactStore:
@@ -35,9 +35,7 @@ class ArtifactStore:
     ) -> Path | None:
         for source_name, root in self._reuse_sources():
             candidates = (
-                [runtime_path]
-                if source_name == "runtime cache"
-                else sorted(root.rglob(filename))
+                [runtime_path] if source_name == "runtime cache" else sorted(root.rglob(filename))
             )
             for candidate in candidates:
                 valid, reason = self._valid_csv(
@@ -60,9 +58,7 @@ class ArtifactStore:
     ) -> Path | None:
         for source_name, root in self._reuse_sources():
             candidates = (
-                [runtime_path]
-                if source_name == "runtime cache"
-                else sorted(root.rglob(filename))
+                [runtime_path] if source_name == "runtime cache" else sorted(root.rglob(filename))
             )
             for candidate in candidates:
                 try:

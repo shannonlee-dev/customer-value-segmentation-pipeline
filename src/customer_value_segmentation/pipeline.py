@@ -7,9 +7,6 @@ import numpy as np
 import pandas as pd
 
 from ._pipeline.artifacts import ArtifactStore
-from ._pipeline.features import ProductFeatureEngineer
-from ._pipeline.loading import DataLoader
-from ._pipeline.rfm import RFMEngine
 from ._pipeline.contracts import (
     ARTICLE_NORMALIZED_REQUIRED_COLUMNS,
     ARTICLE_RENAMES,
@@ -37,8 +34,8 @@ from ._pipeline.contracts import (
     RAW_CUSTOMER_REQUIRED_COLUMNS,
     RAW_CUSTOMERS_FILENAME,
     RAW_DATE_COLUMN,
-    RAW_PRODUCT_NAME_COLUMN,
     RAW_PRICE_COLUMN,
+    RAW_PRODUCT_NAME_COLUMN,
     RAW_TRANSACTION_DTYPES,
     RAW_TRANSACTION_REQUIRED_COLUMNS,
     RAW_TRANSACTIONS_FILENAME,
@@ -46,16 +43,18 @@ from ._pipeline.contracts import (
     RFM_MONETARY_COLUMN,
     RFM_OUTPUT_FILENAME,
     RFM_SCORE_QUANTILE_COUNT,
-    STRING_DTYPE,
     STRICT_PARSING_ERRORS,
+    STRING_DTYPE,
     TRANSACTION_NORMALIZED_REQUIRED_COLUMNS,
     TRANSACTION_RENAMES,
     TRANSACTIONS_CACHE_FILENAME,
     UNIT_PRICE_COLUMN,
 )
+from ._pipeline.features import ProductFeatureEngineer
+from ._pipeline.loading import DataLoader
+from ._pipeline.rfm import RFMEngine
 from .reporting import summarize_numeric
 from .runtime import RuntimeContext
-
 
 MEMMAP_WRITE_MODE = "w+"
 IQR_OUTPUT_FILENAME_TEMPLATE = "iqr_{column}.json"
@@ -71,6 +70,7 @@ DEFAULT_OUTLIER_COLUMN = UNIT_PRICE_COLUMN
 DEFAULT_IQR_THRESHOLD = 1.5
 IQR_QUANTILES = (0.25, 0.75)
 IQR_STATISTIC_KEYS = ("q1", "q3", "lower_fence", "upper_fence", "outlier_count")
+
 
 def _calculate_iqr_statistics(values: np.ndarray, threshold: float) -> dict[str, float | int]:
     """Calculate IQR fences and an exact outlier count for an in-memory numeric array."""
@@ -118,12 +118,8 @@ class DataAnalyzer:
 
     def load_data(self, *, force: bool = False) -> dict[str, int]:
         """Load and normalize full source data without performing imputation."""
-        self.customers, self.customers_path = self._loader.load_customers(
-            force=force
-        )
-        self.articles, self.articles_path = self._loader.load_articles(
-            force=force
-        )
+        self.customers, self.customers_path = self._loader.load_customers(force=force)
+        self.articles, self.articles_path = self._loader.load_articles(force=force)
         self.transactions_path, transaction_rows = self._loader.load_transactions(
             self.customers,
             self.articles,
@@ -236,11 +232,22 @@ class DataAnalyzer:
                 EDA_SUMMARY_FILENAME,
             )
             monthly_path = self._artifacts.find_reusable_csv(
-                "monthly EDA", runtime_monthly, MONTHLY_SUMMARY_FILENAME, ("order_month", RFM_MONETARY_COLUMN)
+                "monthly EDA",
+                runtime_monthly,
+                MONTHLY_SUMMARY_FILENAME,
+                ("order_month", RFM_MONETARY_COLUMN),
             )
             if summary_path is not None and monthly_path is not None:
                 summary = json.loads(summary_path.read_text(encoding="utf-8"))
-                required = {"price_statistics", "histogram_edges", "histogram_counts", "boxplot_before", "boxplot_after", "price_age_correlation", "image_text_correlation"}
+                required = {
+                    "price_statistics",
+                    "histogram_edges",
+                    "histogram_counts",
+                    "boxplot_before",
+                    "boxplot_after",
+                    "price_age_correlation",
+                    "image_text_correlation",
+                }
                 if required.issubset(summary):
                     summary["monthly_summary_path"] = str(monthly_path)
                     self._artifacts.record_status("EDA", "REUSED", summary_path)
@@ -262,10 +269,15 @@ class DataAnalyzer:
         values = np.memmap(values_path, dtype="float64", mode="r", shape=(row_count,))
         price_statistics = summarize_numeric(values)
         q1, q3 = price_statistics["q1"], price_statistics["q3"]
-        lower, upper = q1 - DEFAULT_IQR_THRESHOLD * (q3 - q1), q3 + DEFAULT_IQR_THRESHOLD * (q3 - q1)
+        lower, upper = (
+            q1 - DEFAULT_IQR_THRESHOLD * (q3 - q1),
+            q3 + DEFAULT_IQR_THRESHOLD * (q3 - q1),
+        )
         inliers = values[(values >= lower) & (values <= upper)]
 
-        customers = pd.read_csv(self.customers_path, dtype={CUSTOMER_ID_COLUMN: STRING_DTYPE})[[CUSTOMER_ID_COLUMN, CUSTOMER_AGE_COLUMN]]
+        customers = pd.read_csv(self.customers_path, dtype={CUSTOMER_ID_COLUMN: STRING_DTYPE})[
+            [CUSTOMER_ID_COLUMN, CUSTOMER_AGE_COLUMN]
+        ]
         count = sum_x = sum_y = sum_xy = sum_x2 = sum_y2 = 0.0
         monthly_totals: dict[str, float] = {}
         for chunk in pd.read_csv(
@@ -275,19 +287,34 @@ class DataAnalyzer:
             parse_dates=[ORDER_DATE_COLUMN],
             chunksize=self.chunksize,
         ):
-            paired = chunk[[CUSTOMER_ID_COLUMN, UNIT_PRICE_COLUMN]].merge(customers, on=CUSTOMER_ID_COLUMN, how="left").dropna()
+            paired = (
+                chunk[[CUSTOMER_ID_COLUMN, UNIT_PRICE_COLUMN]]
+                .merge(customers, on=CUSTOMER_ID_COLUMN, how="left")
+                .dropna()
+            )
             x = paired[UNIT_PRICE_COLUMN].to_numpy(dtype=float)
             y = paired[CUSTOMER_AGE_COLUMN].to_numpy(dtype=float)
-            count += len(x); sum_x += x.sum(); sum_y += y.sum(); sum_xy += (x * y).sum(); sum_x2 += (x * x).sum(); sum_y2 += (y * y).sum()
-            grouped = chunk.groupby(chunk[ORDER_DATE_COLUMN].dt.to_period("M"))[UNIT_PRICE_COLUMN].sum()
+            count += len(x)
+            sum_x += x.sum()
+            sum_y += y.sum()
+            sum_xy += (x * y).sum()
+            sum_x2 += (x * x).sum()
+            sum_y2 += (y * y).sum()
+            grouped = chunk.groupby(chunk[ORDER_DATE_COLUMN].dt.to_period("M"))[
+                UNIT_PRICE_COLUMN
+            ].sum()
             for month, total in grouped.items():
                 key = str(month)
                 monthly_totals[key] = monthly_totals.get(key, 0.0) + float(total)
-        denominator = np.sqrt((count * sum_x2 - sum_x ** 2) * (count * sum_y2 - sum_y ** 2))
-        price_age_correlation = 0.0 if denominator == 0 else float((count * sum_xy - sum_x * sum_y) / denominator)
+        denominator = np.sqrt((count * sum_x2 - sum_x**2) * (count * sum_y2 - sum_y**2))
+        price_age_correlation = (
+            0.0 if denominator == 0 else float((count * sum_xy - sum_x * sum_y) / denominator)
+        )
 
         product_features = self.engineer_features(force=force)
-        image_text_correlation = float(product_features[[IMAGE_MEAN_COLUMN, PRODUCT_NAME_LENGTH_COLUMN]].corr().iloc[0, 1])
+        image_text_correlation = float(
+            product_features[[IMAGE_MEAN_COLUMN, PRODUCT_NAME_LENGTH_COLUMN]].corr().iloc[0, 1]
+        )
         histogram_counts, histogram_edges = np.histogram(values, bins=EDA_HISTOGRAM_BIN_COUNT)
         summary = {
             "price_statistics": price_statistics,
@@ -298,7 +325,9 @@ class DataAnalyzer:
             "price_age_correlation": price_age_correlation,
             "image_text_correlation": image_text_correlation,
         }
-        monthly = pd.DataFrame(sorted(monthly_totals.items()), columns=["order_month", RFM_MONETARY_COLUMN])
+        monthly = pd.DataFrame(
+            sorted(monthly_totals.items()), columns=["order_month", RFM_MONETARY_COLUMN]
+        )
         monthly.to_csv(runtime_monthly, index=False)
         runtime_summary.write_text(json.dumps(summary, indent=2), encoding="utf-8")
         del values
@@ -309,7 +338,9 @@ class DataAnalyzer:
 
     def format_cache_report(self) -> str:
         """Return evaluator-facing full-data artifact reuse status."""
-        lines = [f"Runtime mode: {'PRECOMPUTED FULL-DATA ARTIFACTS' if self.context.precomputed_root else self.context.runtime_name.upper()}"]
+        lines = [
+            f"Runtime mode: {'PRECOMPUTED FULL-DATA ARTIFACTS' if self.context.precomputed_root else self.context.runtime_name.upper()}"
+        ]
         if self.context.precomputed_root is not None:
             lines.append(f"Precomputed root: {self.context.precomputed_root}")
         for artifact in ("transactions", "customers", "articles", "product features", "IQR", "RFM"):
@@ -327,22 +358,28 @@ class DataAnalyzer:
     def _materialize_numeric_column(self, column: str) -> tuple[Path, int]:
         """Return a valid disk-backed numeric transaction column, building it only when needed."""
         row_count = self._artifacts.csv_row_count(self.transactions_path)
-        values_path = self.context.aggregate_root / f"{column}_values{".dat"}"
+        values_path = self.context.aggregate_root / f"{column}_values{'.dat'}"
         expected_size = row_count * np.dtype("float64").itemsize
         if values_path.is_file() and values_path.stat().st_size == expected_size:
             return values_path, row_count
 
         values = np.memmap(values_path, dtype="float64", mode=MEMMAP_WRITE_MODE, shape=(row_count,))
         offset = 0
-        for chunk in pd.read_csv(self.transactions_path, usecols=[column], chunksize=self.chunksize):
-            numeric = pd.to_numeric(chunk[column], errors=STRICT_PARSING_ERRORS).to_numpy(dtype="float64")
+        for chunk in pd.read_csv(
+            self.transactions_path, usecols=[column], chunksize=self.chunksize
+        ):
+            numeric = pd.to_numeric(chunk[column], errors=STRICT_PARSING_ERRORS).to_numpy(
+                dtype="float64"
+            )
             values[offset : offset + len(numeric)] = numeric
             offset += len(numeric)
         values.flush()
         del values
         return values_path, row_count
 
-    def _load_matching_iqr_cache(self, column: str, threshold: float) -> dict[str, float | int] | None:
+    def _load_matching_iqr_cache(
+        self, column: str, threshold: float
+    ) -> dict[str, float | int] | None:
         iqr_filename = IQR_OUTPUT_FILENAME_TEMPLATE.format(column=column)
         cached = self._artifacts.find_reusable_json(
             "IQR",
@@ -364,7 +401,9 @@ class DataAnalyzer:
         statistics: dict[str, float | int],
     ) -> dict[str, float | int]:
         result = {"column": column, "threshold": threshold, **statistics}
-        output_path = self.context.aggregate_root / IQR_OUTPUT_FILENAME_TEMPLATE.format(column=column)
+        output_path = self.context.aggregate_root / IQR_OUTPUT_FILENAME_TEMPLATE.format(
+            column=column
+        )
         output_path.write_text(json.dumps(result, indent=2), encoding="utf-8")
         self._artifacts.record_status("IQR", "COMPUTED", output_path)
         return {key: result[key] for key in IQR_STATISTIC_KEYS}
@@ -373,8 +412,15 @@ class DataAnalyzer:
     def _boxplot_statistics(values: np.ndarray, label: str) -> dict[str, float | str]:
         q1, median, q3 = np.quantile(values, [0.25, 0.50, 0.75])
         iqr = q3 - q1
-        inliers = values[(values >= q1 - DEFAULT_IQR_THRESHOLD * iqr) & (values <= q3 + DEFAULT_IQR_THRESHOLD * iqr)]
+        inliers = values[
+            (values >= q1 - DEFAULT_IQR_THRESHOLD * iqr)
+            & (values <= q3 + DEFAULT_IQR_THRESHOLD * iqr)
+        ]
         return {
-            "label": label, "q1": float(q1), "med": float(median), "q3": float(q3),
-            "whislo": float(np.min(inliers)), "whishi": float(np.max(inliers)),
+            "label": label,
+            "q1": float(q1),
+            "med": float(median),
+            "q3": float(q3),
+            "whislo": float(np.min(inliers)),
+            "whishi": float(np.max(inliers)),
         }

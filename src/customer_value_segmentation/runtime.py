@@ -1,14 +1,15 @@
 """Portable discovery of H&M sources and writable runtime artifacts."""
 
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Mapping, Optional
-import os
-
 
 REQUIRED_DATASET_FILES = ("transactions_train.csv", "customers.csv", "articles.csv", "images")
 REQUIRED_DATASET_CSV_FILES = ("transactions_train.csv", "customers.csv", "articles.csv")
-KAGGLE_DATASET_RELATIVE_PATH = Path("input/competitions/h-and-m-personalized-fashion-recommendations")
+KAGGLE_DATASET_RELATIVE_PATH = Path(
+    "input/competitions/h-and-m-personalized-fashion-recommendations"
+)
 DEFAULT_PRECOMPUTED_ROOT = Path(
     "/kaggle/input/notebooks/classichit/notebook9c33091b06/customer-value-segmentation-pipeline"
 )
@@ -63,7 +64,11 @@ def discover_runtime(
     runtime_root = (
         Path(runtime_dir_env).expanduser().resolve()
         if runtime_dir_env
-        else (Path(kaggle_root) / "working" / "hm-customer-value" if runtime_name == "kaggle" else root / "data" / "runtime")
+        else (
+            Path(kaggle_root) / "working" / "hm-customer-value"
+            if runtime_name == "kaggle"
+            else root / "data" / "runtime"
+        )
     )
     processed_root = runtime_root / "processed"
     feature_root = runtime_root / "features" / "product_features"

@@ -1,8 +1,5 @@
 """Shared pipeline schema and policy contracts."""
 
-from pathlib import Path
-
-
 DEFAULT_CHUNKSIZE = 500_000
 STRING_DTYPE = "string"
 STRICT_PARSING_ERRORS = "raise"

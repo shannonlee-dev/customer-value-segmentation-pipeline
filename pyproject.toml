@@ -1,0 +1,36 @@
+[build-system]
+requires = ["hatchling>=1.27,<2"]
+build-backend = "hatchling.build"
+
+[project]
+name = "customer-value-segmentation-pipeline"
+version = "0.1.0"
+description = "거래 데이터의 RFM 분석으로 고객 가치를 세분화하고 분석 보고서를 재현하는 파이프라인"
+readme = "README.md"
+requires-python = ">=3.12,<3.14"
+dependencies = ["numpy>=1.24,<3", "pandas>=2.0,<3", "matplotlib>=3.7,<4", "seaborn>=0.12,<1", "nbformat>=5.9,<6", "nbconvert>=7.8,<8", "ipykernel>=6.25,<8", "kaggle>=1.7,<2"]
+
+[project.scripts]
+hm-build-notebook = "customer_value_segmentation.notebook:main"
+
+[dependency-groups]
+dev = ["pytest>=8,<9", "ruff>=0.11,<1"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/customer_value_segmentation"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--import-mode=importlib --strict-markers"
+markers = ["smoke: 외부 서비스·원본 데이터 변경 없이 주요 실행 경로 검증"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+extend-exclude = ["notebooks"]
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I"]
+
+[tool.ruff.lint.per-file-ignores]
+"src/customer_value_segmentation/pipeline.py" = ["F401"]

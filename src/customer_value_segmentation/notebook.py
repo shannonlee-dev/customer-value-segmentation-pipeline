@@ -5,7 +5,6 @@ from pathlib import Path
 import nbformat
 from nbformat.v4 import new_code_cell, new_markdown_cell, new_notebook
 
-
 PROJECT_BOOTSTRAP_SOURCE = """import os
 import subprocess
 from pathlib import Path
@@ -14,7 +13,7 @@ REPOSITORY_URL = "https://github.com/shannonlee-dev/customer-value-segmentation-
 KAGGLE_PROJECT_ROOT = Path("/kaggle/working/customer-value-segmentation-pipeline")
 
 def is_project_root(path):
-    return (path / "src" / "pipeline.py").is_file()
+    return (path / "src" / "customer_value_segmentation" / "pipeline.py").is_file()
 
 def find_project_root():
     candidates = [Path.cwd(), *Path.cwd().parents]
@@ -53,6 +52,12 @@ def find_project_root():
 
 PROJECT_ROOT = find_project_root()
 os.environ.setdefault("PROJECT_ROOT", str(PROJECT_ROOT))
+
+# Install the package into the notebook kernel instead of modifying import paths.
+import sys
+import importlib.util
+if importlib.util.find_spec("customer_value_segmentation") is None:
+    subprocess.run([sys.executable, "-m", "pip", "install", "--no-deps", "-e", str(PROJECT_ROOT)], check=True)
 """
 
 CHART_STYLE_SOURCE = """KOREAN_CHART_TEXT = {
@@ -108,20 +113,23 @@ else:
 
 def build_notebook(path: Path = Path("notebooks/analysis_report.ipynb")) -> Path:
     cells = [
-        new_code_cell(PROJECT_BOOTSTRAP_SOURCE + """
+        new_code_cell(
+            PROJECT_BOOTSTRAP_SOURCE
+            + """
 precomputed = os.environ.get("HM_PRECOMPUTED_DIR")
 if precomputed:
     print("사전 계산 루트:", Path(precomputed).expanduser().resolve())
 else:
     print("사전 계산 산출물 없이 실행합니다. 원본 데이터가 있으면 전체 데이터를 계산합니다.")
-print("프로젝트 루트:", PROJECT_ROOT)"""),
+print("프로젝트 루트:", PROJECT_ROOT)"""
+        ),
         new_markdown_cell("""# H&M 고객 가치 분석
 
 이 노트북을 열고 **모두 실행**을 선택하세요. 쓰기 가능한 실행 캐시, `HM_PRECOMPUTED_DIR`, 연결한 Kaggle 전체 데이터 산출물, Kaggle competition 입력, `data/raw/h-and-m`, `HM_RAW_DATA_DIR`을 자동으로 찾습니다. 모든 지표는 사용 가능한 전체 데이터셋을 사용하며 고객·거래·상품·이미지를 표본 추출하지 않습니다.
 
 대용량 원시 데이터 준비와 이미지 특징 추출은 동일한 `DataAnalyzer`가 수행하며, 검증된 **전체 데이터 산출물**을 재사용할 수 있습니다. 산출물이 없으면 같은 코드가 전체 H&M 원본 데이터를 처리합니다."""),
-        new_code_cell("""import os
-import sys
+        new_code_cell(
+            """import os
 import time
 from pathlib import Path
 
@@ -133,13 +141,13 @@ import pandas as pd
 import seaborn as sns
 from IPython.display import Markdown, display
 
-""" + CHART_STYLE_SOURCE + """
+"""
+            + CHART_STYLE_SOURCE
+            + """
 ROOT = Path(os.environ["PROJECT_ROOT"]).resolve()
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
-from src.pipeline import DataAnalyzer
-from src.reporting import build_business_insights, summarize_numeric, summarize_rfm_segments
-from src.runtime import discover_runtime
+from customer_value_segmentation.pipeline import DataAnalyzer
+from customer_value_segmentation.reporting import build_business_insights, summarize_numeric, summarize_rfm_segments
+from customer_value_segmentation.runtime import discover_runtime
 
 context = discover_runtime(ROOT)
 analyzer = DataAnalyzer(context)
@@ -151,7 +159,8 @@ if context.precomputed_root is not None:
 print("프로젝트 소스: 사용 가능")
 print("H&M 소스 검증: 통과")
 print(f"실행 산출물 루트: {context.runtime_root}")
-print("분석 범위: 전체 데이터셋")"""),
+print("분석 범위: 전체 데이터셋")"""
+        ),
         new_markdown_cell("""## 전체 데이터 준비와 멀티모달 특징
 
 거래는 Pandas chunk로 읽습니다. `transactions`, `customers`, `articles`, `product_features`는 각각의 자연스러운 grain을 유지합니다. 이렇게 하면 수천만 거래 행에 고객·상품 속성을 반복하지 않으며, 통계에 필요한 컬럼만 필요한 시점에 chunk 단위로 join합니다.
@@ -338,13 +347,16 @@ print("처리한 상품 수:", summary["product_rows"])
 print("IQR 이상치 수:", iqr["outlier_count"])
 print("총 실행 시간(초):", round(time.monotonic() - started, 1))"""),
     ]
-    cells.insert(5, new_code_cell("""output_path = Path("/kaggle/working/product_features.csv")
+    cells.insert(
+        5,
+        new_code_cell("""output_path = Path("/kaggle/working/product_features.csv")
 
 product_features.to_csv(output_path, index=False)
 
 print(f"저장 완료: {output_path}")
 print(product_features.columns.tolist())
-product_features.head()"""))
+product_features.head()"""),
+    )
     notebook = new_notebook(cells=cells)
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -352,5 +364,10 @@ product_features.head()"""))
     return path
 
 
-if __name__ == "__main__":
+def main() -> None:
+    """Generate the clean analysis notebook."""
     build_notebook()
+
+
+if __name__ == "__main__":
+    main()

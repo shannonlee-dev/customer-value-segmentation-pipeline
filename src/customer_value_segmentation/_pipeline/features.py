@@ -6,8 +6,8 @@ import numpy as np
 import pandas as pd
 from matplotlib import image as mpimg
 
-from src._pipeline.artifacts import ArtifactStore
-from src._pipeline.contracts import (
+from customer_value_segmentation._pipeline.artifacts import ArtifactStore
+from customer_value_segmentation._pipeline.contracts import (
     IMAGE_FEATURE_REQUIRED_COLUMNS,
     IMAGE_MEAN_COLUMN,
     IMAGE_PATH_COLUMN,
@@ -18,8 +18,7 @@ from src._pipeline.contracts import (
     PRODUCT_NAME_LENGTH_COLUMN,
     STRING_DTYPE,
 )
-from src.runtime import RuntimeContext
-
+from customer_value_segmentation.runtime import RuntimeContext
 
 IMAGE_RGB_CHANNEL_COUNT = 3
 
@@ -34,9 +33,7 @@ class ProductFeatureEngineer:
     ) -> None:
         self.context = context
         self.artifacts = artifacts
-        self.runtime_product_features_path = (
-            context.feature_root / PRODUCT_FEATURES_CACHE_FILENAME
-        )
+        self.runtime_product_features_path = context.feature_root / PRODUCT_FEATURES_CACHE_FILENAME
 
     def build(
         self,
@@ -67,12 +64,16 @@ class ProductFeatureEngineer:
 
     def find_reusable(self, *, force: bool) -> tuple[pd.DataFrame, Path] | None:
         """Return a valid existing product-feature artifact when reuse is allowed."""
-        source = None if force else self.artifacts.find_reusable_csv(
-            "product features",
-            self.runtime_product_features_path,
-            PRODUCT_FEATURES_CACHE_FILENAME,
-            IMAGE_FEATURE_REQUIRED_COLUMNS,
-            forbidden_columns=("image_status",),
+        source = (
+            None
+            if force
+            else self.artifacts.find_reusable_csv(
+                "product features",
+                self.runtime_product_features_path,
+                PRODUCT_FEATURES_CACHE_FILENAME,
+                IMAGE_FEATURE_REQUIRED_COLUMNS,
+                forbidden_columns=("image_status",),
+            )
         )
         if source is not None:
             return (

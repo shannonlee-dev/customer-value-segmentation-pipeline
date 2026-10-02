@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pandas as pd
 
-from src._pipeline.artifacts import ArtifactStore
-from src._pipeline.contracts import (
+from customer_value_segmentation._pipeline.artifacts import ArtifactStore
+from customer_value_segmentation._pipeline.contracts import (
     ARTICLE_NORMALIZED_REQUIRED_COLUMNS,
     ARTICLE_RENAMES,
     ARTICLES_CACHE_FILENAME,
@@ -32,7 +32,7 @@ from src._pipeline.contracts import (
     TRANSACTIONS_CACHE_FILENAME,
     UNIT_PRICE_COLUMN,
 )
-from src.runtime import RuntimeContext
+from customer_value_segmentation.runtime import RuntimeContext
 
 
 class DataLoader:
@@ -47,26 +47,32 @@ class DataLoader:
         self.context = context
         self.artifacts = artifacts
         self.chunksize = chunksize
-        self.runtime_transactions_path = (
-            context.processed_root / TRANSACTIONS_CACHE_FILENAME
-        )
+        self.runtime_transactions_path = context.processed_root / TRANSACTIONS_CACHE_FILENAME
         self.runtime_customers_path = context.processed_root / CUSTOMERS_CACHE_FILENAME
         self.runtime_articles_path = context.processed_root / ARTICLES_CACHE_FILENAME
 
     def load_customers(self, *, force: bool) -> tuple[pd.DataFrame, Path]:
         """Return normalized customers without imputing missing values."""
-        source = None if force else self.artifacts.find_reusable_csv(
-            "customers",
-            self.runtime_customers_path,
-            CUSTOMERS_CACHE_FILENAME,
-            CUSTOMER_NORMALIZED_REQUIRED_COLUMNS,
-            forbidden_columns=("fashion_news_frequency", "age_was_missing"),
+        source = (
+            None
+            if force
+            else self.artifacts.find_reusable_csv(
+                "customers",
+                self.runtime_customers_path,
+                CUSTOMERS_CACHE_FILENAME,
+                CUSTOMER_NORMALIZED_REQUIRED_COLUMNS,
+                forbidden_columns=("fashion_news_frequency", "age_was_missing"),
+            )
         )
         if source is not None:
-            customers = pd.read_csv(
-                source,
-                dtype={CUSTOMER_ID_COLUMN: STRING_DTYPE},
-            ).loc[:, list(CUSTOMER_NORMALIZED_REQUIRED_COLUMNS)].copy()
+            customers = (
+                pd.read_csv(
+                    source,
+                    dtype={CUSTOMER_ID_COLUMN: STRING_DTYPE},
+                )
+                .loc[:, list(CUSTOMER_NORMALIZED_REQUIRED_COLUMNS)]
+                .copy()
+            )
             return customers, source
 
         raw = self._require_raw_data_root()
@@ -92,18 +98,26 @@ class DataLoader:
 
     def load_articles(self, *, force: bool) -> tuple[pd.DataFrame, Path]:
         """Return normalized articles with canonical H&M image paths."""
-        source = None if force else self.artifacts.find_reusable_csv(
-            "articles",
-            self.runtime_articles_path,
-            ARTICLES_CACHE_FILENAME,
-            ARTICLE_NORMALIZED_REQUIRED_COLUMNS,
-            forbidden_columns=("category",),
+        source = (
+            None
+            if force
+            else self.artifacts.find_reusable_csv(
+                "articles",
+                self.runtime_articles_path,
+                ARTICLES_CACHE_FILENAME,
+                ARTICLE_NORMALIZED_REQUIRED_COLUMNS,
+                forbidden_columns=("category",),
+            )
         )
         if source is not None:
-            articles = pd.read_csv(
-                source,
-                dtype={PRODUCT_ID_COLUMN: STRING_DTYPE},
-            ).loc[:, list(ARTICLE_NORMALIZED_REQUIRED_COLUMNS)].copy()
+            articles = (
+                pd.read_csv(
+                    source,
+                    dtype={PRODUCT_ID_COLUMN: STRING_DTYPE},
+                )
+                .loc[:, list(ARTICLE_NORMALIZED_REQUIRED_COLUMNS)]
+                .copy()
+            )
             return articles, source
 
         raw = self._require_raw_data_root()
@@ -139,12 +153,16 @@ class DataLoader:
         force: bool,
     ) -> tuple[Path, int]:
         """Return a normalized transaction cache after validating foreign keys."""
-        source = None if force else self.artifacts.find_reusable_csv(
-            "transactions",
-            self.runtime_transactions_path,
-            TRANSACTIONS_CACHE_FILENAME,
-            TRANSACTION_NORMALIZED_REQUIRED_COLUMNS,
-            forbidden_columns=("sales_channel_id",),
+        source = (
+            None
+            if force
+            else self.artifacts.find_reusable_csv(
+                "transactions",
+                self.runtime_transactions_path,
+                TRANSACTIONS_CACHE_FILENAME,
+                TRANSACTION_NORMALIZED_REQUIRED_COLUMNS,
+                forbidden_columns=("sales_channel_id",),
+            )
         )
         if source is not None:
             return source, self.artifacts.csv_row_count(source)

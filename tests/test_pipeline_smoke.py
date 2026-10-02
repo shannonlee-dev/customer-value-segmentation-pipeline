@@ -5,19 +5,19 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+import nbformat
 import numpy as np
 import pandas as pd
 from matplotlib import image as mpimg
-import nbformat
 
-from scripts.build_notebook import build_notebook
-from src._pipeline.artifacts import ArtifactStore
-from src._pipeline.features import ProductFeatureEngineer
-from src._pipeline.loading import DataLoader
-from src._pipeline.rfm import RFMEngine
-from src import pipeline, runtime
-from src.pipeline import DataAnalyzer, _calculate_iqr_statistics
-from src.runtime import discover_runtime
+from customer_value_segmentation import pipeline, runtime
+from customer_value_segmentation._pipeline.artifacts import ArtifactStore
+from customer_value_segmentation._pipeline.features import ProductFeatureEngineer
+from customer_value_segmentation._pipeline.loading import DataLoader
+from customer_value_segmentation._pipeline.rfm import RFMEngine
+from customer_value_segmentation.notebook import build_notebook
+from customer_value_segmentation.pipeline import DataAnalyzer, _calculate_iqr_statistics
+from customer_value_segmentation.runtime import discover_runtime
 
 
 def write_fixture(raw: Path) -> None:
@@ -33,11 +33,19 @@ def write_fixture(raw: Path) -> None:
         columns=["t_dat", "customer_id", "article_id", "price", "sales_channel_id"],
     ).to_csv(raw / "transactions_train.csv", index=False)
     pd.DataFrame(
-        [["0010000001", "Item one", "Group A"], ["0010000002", "Item two", "Group B"], ["0010000003", "No image", "Group C"]],
+        [
+            ["0010000001", "Item one", "Group A"],
+            ["0010000002", "Item two", "Group B"],
+            ["0010000003", "No image", "Group C"],
+        ],
         columns=["article_id", "prod_name", "product_group_name"],
     ).to_csv(raw / "articles.csv", index=False)
     pd.DataFrame(
-        [["customer-a", 25, "ACTIVE", "Regularly"], ["customer-b", None, "ACTIVE", "None"], ["customer-c", 45, "PRE-CREATE", "Monthly"]],
+        [
+            ["customer-a", 25, "ACTIVE", "Regularly"],
+            ["customer-b", None, "ACTIVE", "None"],
+            ["customer-c", 45, "PRE-CREATE", "Monthly"],
+        ],
         columns=["customer_id", "age", "club_member_status", "fashion_news_frequency"],
     ).to_csv(raw / "customers.csv", index=False)
     mpimg.imsave(image_dir / "0010000001.jpg", np.full((10, 8, 3), 0.2))
@@ -104,7 +112,7 @@ class PipelineSmokeTest(unittest.TestCase):
             self.assertEqual(status["probe"], "REUSED")
 
     def test_data_analyzer_keeps_primary_public_facade_contract(self) -> None:
-        self.assertEqual(DataAnalyzer.__module__, "src.pipeline")
+        self.assertEqual(DataAnalyzer.__module__, "customer_value_segmentation.pipeline")
         self.assertEqual(pipeline.RAW_PRODUCT_NAME_COLUMN, "prod_name")
         self.assertEqual(pipeline.RFM_SCORE_QUANTILE_COUNT, 4)
         for method_name in (
@@ -135,9 +143,9 @@ class PipelineSmokeTest(unittest.TestCase):
                 ["customer_id", "age", "club_member_status"],
             )
             self.assertTrue(
-                analyzer.customers.loc[
-                    analyzer.customers["customer_id"] == "customer-b", "age"
-                ].isna().all()
+                analyzer.customers.loc[analyzer.customers["customer_id"] == "customer-b", "age"]
+                .isna()
+                .all()
             )
             self.assertNotIn("age_raw", analyzer.customers.columns)
 
@@ -216,7 +224,10 @@ class PipelineSmokeTest(unittest.TestCase):
             self.assertTrue(analyzer.customers["age"].isna().all())
 
     def test_runtime_dataset_root_uses_required_dataset_files_name(self) -> None:
-        self.assertEqual(runtime.REQUIRED_DATASET_FILES, ("transactions_train.csv", "customers.csv", "articles.csv", "images"))
+        self.assertEqual(
+            runtime.REQUIRED_DATASET_FILES,
+            ("transactions_train.csv", "customers.csv", "articles.csv", "images"),
+        )
 
         with tempfile.TemporaryDirectory() as directory:
             raw = Path(directory) / "raw"
@@ -273,7 +284,10 @@ class PipelineSmokeTest(unittest.TestCase):
                 "max": 0.5,
             }
 
-            with patch("src.pipeline.summarize_numeric", return_value=shared_summary):
+            with patch(
+                "customer_value_segmentation.pipeline.summarize_numeric",
+                return_value=shared_summary,
+            ):
                 result = analyzer.prepare_eda_artifacts(force=True)
 
             self.assertEqual(result["price_statistics"], shared_summary)
@@ -495,7 +509,9 @@ class PipelineSmokeTest(unittest.TestCase):
             notebook = build_notebook(Path(directory) / "analysis_report.ipynb")
             rendered = nbformat.read(notebook, as_version=4)
             content = "\n".join(cell.source for cell in rendered.cells)
-            narrative = "\n".join(cell.source for cell in rendered.cells if cell.cell_type == "markdown")
+            narrative = "\n".join(
+                cell.source for cell in rendered.cells if cell.cell_type == "markdown"
+            )
 
             self.assertIn("# H&M 고객 가치 분석", content)
             self.assertIn("상대 가격 분포", content)
@@ -525,15 +541,21 @@ class PipelineSmokeTest(unittest.TestCase):
             self.assertEqual(len(product_features), 3)
             self.assertEqual(analyzer.product_features_path.name, "product_features.csv")
             self.assertTrue(analyzer.product_features_path.is_file())
-            self.assertNotIn("sales_channel_id", pd.read_csv(analyzer.transactions_path, nrows=1).columns)
+            self.assertNotIn(
+                "sales_channel_id", pd.read_csv(analyzer.transactions_path, nrows=1).columns
+            )
             self.assertNotIn("fashion_news_frequency", analyzer.customers.columns)
             self.assertNotIn("age_was_missing", analyzer.customers.columns)
             self.assertNotIn("category", analyzer.articles.columns)
             self.assertNotIn("image_status", product_features.columns)
             self.assertNotIn("product_name_length", analyzer.articles.columns)
             self.assertIn("product_name_length", product_features.columns)
-            self.assertNotIn("product_name_length", pd.read_csv(analyzer.articles_path, nrows=1).columns)
-            self.assertIn("product_name_length", pd.read_csv(analyzer.product_features_path, nrows=1).columns)
+            self.assertNotIn(
+                "product_name_length", pd.read_csv(analyzer.articles_path, nrows=1).columns
+            )
+            self.assertIn(
+                "product_name_length", pd.read_csv(analyzer.product_features_path, nrows=1).columns
+            )
             self.assertEqual(iqr["outlier_count"], 0)
             self.assertEqual(len(rfm), 3)
             self.assertTrue(Path(eda["monthly_summary_path"]).is_file())
@@ -570,7 +592,9 @@ class PipelineSmokeTest(unittest.TestCase):
             self.assertEqual(refreshed.artifact_status["customers"], "COMPUTED")
             self.assertEqual(refreshed.artifact_status["articles"], "COMPUTED")
             self.assertEqual(refreshed.artifact_status["product features"], "COMPUTED")
-            self.assertNotIn("sales_channel_id", pd.read_csv(refreshed.transactions_path, nrows=1).columns)
+            self.assertNotIn(
+                "sales_channel_id", pd.read_csv(refreshed.transactions_path, nrows=1).columns
+            )
             self.assertNotIn("fashion_news_frequency", refreshed.customers.columns)
             self.assertNotIn("category", refreshed.articles.columns)
             self.assertNotIn("image_status", product_features.columns)

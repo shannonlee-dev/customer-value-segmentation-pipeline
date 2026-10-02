@@ -5,8 +5,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from src._pipeline.artifacts import ArtifactStore
-from src._pipeline.contracts import (
+from customer_value_segmentation._pipeline.artifacts import ArtifactStore
+from customer_value_segmentation._pipeline.contracts import (
     RFM_BEST_SCORE,
     RFM_FREQUENCY_COLUMN,
     RFM_FREQUENCY_SCORE_COLUMN,
@@ -26,11 +26,10 @@ from src._pipeline.contracts import (
     RFM_SEGMENT_NEW,
     RFM_SEGMENT_POTENTIAL,
     RFM_SEGMENT_VIP,
-    STRING_DTYPE,
     STRICT_PARSING_ERRORS,
+    STRING_DTYPE,
 )
-from src.runtime import RuntimeContext
-
+from customer_value_segmentation.runtime import RuntimeContext
 
 RFM_PARTITIONS_DIRECTORY = "rfm_partitions"
 RFM_PARTITION_FILENAME_TEMPLATE = "part_{index:02d}.csv"
@@ -134,16 +133,10 @@ class RFMEngine:
             dtype={customer_col: STRING_DTYPE},
             chunksize=self.chunksize,
         ):
-            chunk[date_col] = pd.to_datetime(
-                chunk[date_col], errors=STRICT_PARSING_ERRORS
-            )
-            chunk[amount_col] = pd.to_numeric(
-                chunk[amount_col], errors=STRICT_PARSING_ERRORS
-            )
+            chunk[date_col] = pd.to_datetime(chunk[date_col], errors=STRICT_PARSING_ERRORS)
+            chunk[amount_col] = pd.to_numeric(chunk[amount_col], errors=STRICT_PARSING_ERRORS)
             chunk_max = pd.Timestamp(chunk[date_col].max())
-            max_date = (
-                chunk_max if max_date is None or chunk_max > max_date else max_date
-            )
+            max_date = chunk_max if max_date is None or chunk_max > max_date else max_date
             buckets = (
                 pd.util.hash_pandas_object(chunk[customer_col], index=False).to_numpy()
                 % partition_count
@@ -168,8 +161,7 @@ class RFMEngine:
         return (
             pd.Timestamp(analysis_date)
             if analysis_date is not None
-            else pd.Timestamp(max_date.date())
-            + pd.offsets.Day(RFM_REFERENCE_OFFSET_DAYS)
+            else pd.Timestamp(max_date.date()) + pd.offsets.Day(RFM_REFERENCE_OFFSET_DAYS)
         )
 
     def _aggregate_rfm_partitions(
@@ -208,9 +200,7 @@ class RFMEngine:
     ) -> pd.DataFrame:
         frame = frame.copy()
         frame[date_col] = pd.to_datetime(frame[date_col], errors=STRICT_PARSING_ERRORS)
-        frame[amount_col] = pd.to_numeric(
-            frame[amount_col], errors=STRICT_PARSING_ERRORS
-        )
+        frame[amount_col] = pd.to_numeric(frame[amount_col], errors=STRICT_PARSING_ERRORS)
         return frame.groupby(customer_col, as_index=False).agg(
             **{
                 RFM_RECENCY_COLUMN: (

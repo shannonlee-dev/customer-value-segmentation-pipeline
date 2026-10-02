@@ -1,5 +1,38 @@
 # H&M 고객가치 세분화 파이프라인
 
+## 프로젝트 소개
+
+H&M 전체 거래·고객·상품·이미지를 같은 분석 코드로 처리하고 고객의 RFM 세그먼트와 비즈니스 인사이트를 만드는 프로젝트다. 원본 데이터는 포함하지 않으며 `price`는 데이터셋의 상대값으로 해석한다.
+
+## 핵심 특징
+
+- 거래 CSV chunking, disk-backed NumPy 배열, 고객 hash partition으로 전체 데이터를 분석한다.
+- 고객 단위 연령 대치와 상품 이미지·텍스트 특징을 독립적으로 관리한다.
+- 검증된 전체 데이터 산출물을 재사용하고 노트북에서 여섯 차트와 고객 세분화를 설명한다.
+- 설치 가능한 패키지와 잠긴 uv 환경, 임시 데이터 기반 pytest 검증을 제공한다.
+
+## 아키텍처
+
+| 구성 요소 | 역할 |
+| --- | --- |
+| `runtime.py` | 원본·사전 계산·실행 산출물 경로 탐색 |
+| `_pipeline/loading.py`, `artifacts.py` | CSV 정규화와 캐시 검증 |
+| `_pipeline/features.py`, `rfm.py` | 상품 특징 및 고객 RFM 집계 |
+| `pipeline.py`, `reporting.py` | 분석 단계 조정과 수치·비즈니스 요약 |
+| `notebook.py`, `notebooks/` | 분석 보고서 노트북 생성과 실행 |
+
+```mermaid
+flowchart LR
+    Raw[H&M 원본 데이터] --> Runtime[실행 경로 탐색]
+    Cache[전체 데이터 산출물] --> Runtime
+    Runtime --> Loading[CSV 정규화와 캐시 검증]
+    Loading --> Features[상품 이미지·텍스트 특징]
+    Loading --> RFM[고객 RFM 집계]
+    Features --> Analysis[전체 데이터 통계 분석]
+    RFM --> Report[비즈니스 요약과 노트북]
+    Analysis --> Report
+```
+
 ![H&M 고객가치 세분화 파이프라인 흐름도](assets/pipeline-flow.svg)
 
 `notebooks/analysis_report.ipynb`를 열어 **Run All** 하면 H&M 전체 거래·고객·상품·이미지를 같은 코드로 분석한다. 원본 행과 이미지는 저장소에 포함하지 않는다. `price`는 데이터셋의 상대값이며 통화 금액으로 해석하지 않는다.
@@ -12,7 +45,7 @@
 
 ## 구조
 
-`src/pipeline.py`의 `DataAnalyzer`가 public facade다. 전체 통합 거래 DataFrame은 만들지 않고 `transactions`, `customers`, `articles`, `product_features`를 각각의 grain으로 유지한다. 필요한 분석에서만 join하며, 노트북의 Dataset Inventory가 실행 시점의 shape와 schema를 보여준다.
+`src/customer_value_segmentation/pipeline.py`의 `DataAnalyzer`가 public facade다. 전체 통합 거래 DataFrame은 만들지 않고 `transactions`, `customers`, `articles`, `product_features`를 각각의 grain으로 유지한다. 필요한 분석에서만 join하며, 노트북의 Dataset Inventory가 실행 시점의 shape와 schema를 보여준다.
 
 - `load_data()` — 전체 원본을 로드·정규화·검증하며 고객 `age` 결측은 그대로 둘 수 있음
 - `handle_missing_values()` — `load_data()` 이후 고객 단위 그룹 통계로 같은 `age` 컬럼의 결측을 대치하고 최종 `customers.csv` 저장
@@ -56,10 +89,10 @@ data/raw/h-and-m/
 ```
 
 ```bash
-python3 -m venv .venv
-.venv/bin/pip install -r requirements.txt
-.venv/bin/python scripts/build_notebook.py
-HM_RAW_DATA_DIR=data/raw/h-and-m .venv/bin/jupyter notebook notebooks/analysis_report.ipynb
+make setup
+make check test smoke build
+make run
+HM_RAW_DATA_DIR=data/raw/h-and-m uv run --frozen jupyter nbconvert --execute --to notebook --inplace notebooks/analysis_report.ipynb
 ```
 
 다른 위치라면 `HM_RAW_DATA_DIR=/external/path`를 설정한다. 결과 cache는 기본 `data/runtime/` 또는 `HM_RUNTIME_DIR`에 생성되며 Git에서 무시된다.
@@ -67,7 +100,7 @@ HM_RAW_DATA_DIR=data/raw/h-and-m .venv/bin/jupyter notebook notebooks/analysis_r
 이미 계산해 둔 결과를 로컬에서 재사용하려면 원본 데이터 대신 `HM_PRECOMPUTED_DIR`을 지정한다.
 
 ```bash
-HM_PRECOMPUTED_DIR=/external/hm-precomputed .venv/bin/jupyter notebook notebooks/analysis_report.ipynb
+HM_PRECOMPUTED_DIR=/external/hm-precomputed uv run --frozen jupyter nbconvert --execute --to notebook --inplace notebooks/analysis_report.ipynb
 ```
 
 해당 폴더에는 `processed/`, `features/`, `aggregates/` 아래의 분석 산출물이 있어야 한다. 필요한 파일이 없으면 원본 데이터 경로(`HM_RAW_DATA_DIR`)를 함께 지정해 다시 계산한다.
