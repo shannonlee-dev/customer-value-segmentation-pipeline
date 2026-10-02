@@ -1,0 +1,16 @@
+name: 질문
+description: 사용법, 실행 환경 또는 설계에 관해 질문해 주세요.
+title: "[질문] "
+labels: [질문]
+body:
+  - type: textarea
+    id: question
+    attributes:
+      label: 질문 내용
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: 확인한 내용
+      description: 참고한 문서, 실행 환경, 시도한 명령과 결과를 적어 주세요. 비밀값과 개인정보는 제외합니다.
