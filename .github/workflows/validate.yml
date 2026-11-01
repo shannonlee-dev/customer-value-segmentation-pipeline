@@ -21,11 +21,11 @@ jobs:
       - name: 저장소 가져오기
         uses: actions/checkout@v7.0.1
       - name: Python 준비
-        uses: actions/setup-python@v7.0.0
+        uses: actions/setup-python@v7.1.0
         with:
           python-version: '3.13'
       - name: uv 준비
-        uses: astral-sh/setup-uv@v10.2.0
+        uses: astral-sh/setup-uv@v10.3.3
         with:
           version: '0.12.3'
           enable-cache: true
